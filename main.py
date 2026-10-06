@@ -12,3 +12,5 @@ monnun = pd.read_csv(MAPPA / "HR-gognin(Sheet2).csv", encoding="latin1")
 
 print(hjukkur.head())
 print(monnun)
+
+print("sup")
