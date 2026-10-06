@@ -7,9 +7,8 @@ import matplotlib.pyplot as plt
 
 MAPPA = Path(__file__).parent
 
-hjukkur = pd.read_csv(MAPPA / "HR-gogninHj_kkur.csv", encoding="latin1")
-monnun  = pd.read_csv(MAPPA / "HR-gogninSheet2.csv", encoding="latin1")
+hjukkur = pd.read_csv(MAPPA / "HR-gognin(Hjúkkur).csv", encoding="latin1")
+monnun = pd.read_csv(MAPPA / "HR-gognin(Sheet2).csv", encoding="latin1")
 
 print(hjukkur.head())
 print(monnun)
-
