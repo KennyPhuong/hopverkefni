@@ -11,7 +11,9 @@ import hashlib
 import json
 import math
 from pathlib import Path
+import shutil
 import sys
+import tempfile
 from uuid import uuid4
 
 import gurobipy as gp
@@ -45,6 +47,23 @@ def framvinda(model, where):
     bound = bound if abs(bound) < 1e90 else None
     gap = reikna_gap(incumbent, bound)
     model._progress.append((timi, incumbent, bound, gap))
+
+
+def log_slod(mappa):
+    """Slóð fyrir Gurobi-loggskrá sem Gurobi getur opnað.
+
+    Gurobi á Windows ræður ekki við stafi utan ASCII (t.d. ó, ð) í slóðum.
+    Ef niðurstöðumappan hefur slíka stafi er loggurinn skrifaður í
+    tímabundna möppu og færður í niðurstöðumöppuna eftir keyrslu.
+    Skilar (slóð fyrir Gurobi, lokaslóð) eða (None, None) ef engin nothæf slóð finnst.
+    """
+    lokaslod = mappa / "solver.log"
+    if str(lokaslod).isascii():
+        return lokaslod, lokaslod
+    tmp = Path(tempfile.gettempdir()) / f"gurobi_{uuid4().hex}.log"
+    if str(tmp).isascii():
+        return tmp, lokaslod
+    return None, None
 
 
 def reikna_gap(incumbent, bound):
@@ -131,7 +150,7 @@ def main(argv=None):
             sama_thorf_alla_daga=True, textastefna="manadarprosentur",
             neikvaett_i_null=True, sleppa_starfsmonnum=sleppa)
         print(f"Gögn tilbúin: {len(gogn['starfsmenn'])} starfsmenn, {len(dagar)} dagar.", flush=True)
-        print("Líkanið hefur mjúka mönnun og harða helgarhópa. Fyrri vaktir og óskir "
+        print("Líkanið hefur harða mönnun og mjúka helgarhópa. Fyrri vaktir og óskir "
               "eru ekki gefnar; hvíld yfir mánaðarmörk er því ekki staðfest.", flush=True)
         mappa = args.nidurstodumappa.resolve() / (
             f"{args.ar}-{args.manudur:02d}_{datetime.now():%Y%m%d_%H%M%S}_{uuid4().hex[:6]}")
@@ -141,9 +160,16 @@ def main(argv=None):
         model.Params.MIPGap = args.gap
         model.Params.Seed = 0
         model.Params.Threads = 2
-        model.Params.LogFile = str(mappa / "solver.log")
+        gurobi_log, loka_log = log_slod(mappa)
+        if gurobi_log is not None:
+            model.Params.LogFile = str(gurobi_log)
+        else:
+            print("Aðvörun: engin ASCII-slóð fyrir solver.log; loggur ekki vistaður.", flush=True)
         model._progress = []
         model.optimize(framvinda)
+        if gurobi_log is not None and gurobi_log != loka_log:
+            model.Params.LogFile = ""          # loka loggskránni áður en hún er færð
+            shutil.move(str(gurobi_log), str(loka_log))
         yfirlit = vista_nidurstodu(model, x, gogn, mappa)
         yfirlit.update(gurobi_version=list(gp.gurobi.version()),
             solver_parameters={"TimeLimit": args.timamork, "MIPGap": args.gap, "Seed": 0, "Threads": 2},
