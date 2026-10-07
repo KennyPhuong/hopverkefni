@@ -1,0 +1,1 @@
+"""Prófanir fyrir gagnaundirbúning vaktaplans."""
