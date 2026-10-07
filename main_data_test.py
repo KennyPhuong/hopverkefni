@@ -78,7 +78,21 @@ def main():
     print("Markvaktir:", sum(gogn["mark"].values()))
     print("Mönnunarþörf:", sum(gogn["monnunar_thorf"].values()))
     print("\nAðalorðabók fyrir model.py:")
-    pprint(gogn, sort_dicts=False)
+    AUKASTAFIR = 2
+
+    def namunda_til_prentunar(gildi):
+        if isinstance(gildi, float):
+            return round(gildi, AUKASTAFIR)
+        if isinstance(gildi, dict):
+            return {
+                lykill: namunda_til_prentunar(value)
+                for lykill, value in gildi.items()
+            }
+        if isinstance(gildi, list):
+            return [namunda_til_prentunar(value) for value in gildi]
+        return gildi
+
+    pprint(namunda_til_prentunar(gogn), sort_dicts=False)
     return 0
 
 
