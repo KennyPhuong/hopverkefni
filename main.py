@@ -268,3 +268,18 @@ if m.SolCount > 0:
             vakt = next((s for s in leyfdar[n] if x[n, d, s].X > 0.5), "-")
             rod += f"{vakt:>3}"
         print(f"{n:5}{rod}")
+    
+    # Hvar vantar fólk?
+    print("\nUndirmönnun eftir degi:")
+    vd_nafn = ["mán", "þri", "mið", "fim", "fös", "lau", "sun"]
+    for d in D:
+        vantar = {(s, p): slaki[d, s, p].X for s in VAKTIR for p in thorf[s]
+                  if slaki[d, s, p].X > 0.5}
+        if vantar:
+            lysing = ", ".join(f"{s}-{p}: {v:.0f}" for (s, p), v in vantar.items())
+            print(f"  Dagur {d:2} ({vd_nafn[vikudagur(d)]}, hópur {helgar_hopur(d)}): {lysing}")
+
+    # Stærð helgarhópa
+    for g in G:
+        fjoldi = sum(1 for n in N if z[n, g].X > 0.5)
+        print(f"Helgarhópur {g}: {fjoldi} manns")
