@@ -8,3 +8,4 @@ results/
 # Gurobi
 *.log
 gurobi.env
+gogn-*.txt
