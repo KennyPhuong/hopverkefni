@@ -1,23 +1,40 @@
 """Afmörkuð próf; HR_GAGNAMAPPA virkjar einnig raunverulegan innlestur."""
 import copy
+import csv
 import os
 from pathlib import Path
 import sys
 import tempfile
 import unittest
+import warnings
+from unittest.mock import patch
 
 import pandas as pd
-from openpyxl import Workbook
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import data
 
 
+def _lesa_raðir(path):
+    with Path(path).open(encoding="utf-8", newline="") as f:
+        return list(csv.reader(f))
+
+
+def _skrifa_raðir(path, rows, encoding="utf-8"):
+    with Path(path).open("w", encoding=encoding, newline="") as f:
+        csv.writer(f).writerows(rows)
+
+
+def _breyta_reit(path, row, col, value):
+    rows = _lesa_raðir(path)
+    while len(rows[row - 1]) < col:
+        rows[row - 1].append("")
+    rows[row - 1][col - 1] = value
+    _skrifa_raðir(path, rows)
+
+
 def skrifa_daemi(mappa, *, bn=False, duplicate=False, missing=False, unknown_role=False):
-    """Smátt tilbúið Excel-dæmi, ekki afrit eða breyting á heimild."""
-    w = Workbook()
-    s = w.active
-    s.title = "Hjúkkur"
+    """Smátt tilbúið CSV-dæmi; hrá heimild er ekki notuð eða breytt."""
     h = ["Nafn", "Vinnufyrirkomulag", *data.HAEFNIDALKAR, "bör", "Vaktir"]
     for m in range(1, 13):
         rest = list(data.MANADARFYRIRSAGNIR)
@@ -27,25 +44,22 @@ def skrifa_daemi(mappa, *, bn=False, duplicate=False, missing=False, unknown_rol
     h.append("Athugasemdir")
     if missing:
         h[0] = "Óþekktur dálkur"
-    s.append(h)
+    rows = [h]
     for n, f in (("h1", .525), ("h2", 0)):
         row = [n, f, *([1] * len(data.HAEFNIDALKAR)), 0, " MV - KV - NV "]
         for m in range(1, 13):
             row.extend([f, *([0] * 8)])
-        s.append([*row, None])
+        rows.append([*row, ""])
     if duplicate:
-        s.append([c.value for c in s[2]])
-    s.append([None, "Samtals stöðugildi"])
-    s.append([None, "Munaðarlaus texti"])
-    q = w.create_sheet("Sheet2")
-    q.append([None, "Mönnunarþörf"])
-    q.append([None, "MV", "KV", "NV"])
-    q.append([None, " a ", "A", "A"])
-    q.append([None, "A", "A", None])
+        rows.append(rows[1].copy())
+    rows.extend([["", "Samtals stöðugildi"], ["", "Munaðarlaus texti"]])
+    q = [["", "Mönnunarþörf"], ["", "MV", "KV", "NV"],
+         ["", " a ", "A", "A"], ["", "A", "A", ""]]
     if unknown_role:
-        q.append([None, "Óþekkt", None, None])
-    path = Path(mappa) / data.SKRA
-    w.save(path)
+        q.append(["", "Óþekkt", "", ""])
+    path = Path(mappa) / data.STARFSFOLKSKRA
+    _skrifa_raðir(path, rows)
+    _skrifa_raðir(Path(mappa) / data.MONNUNARSKRA, q)
     return path
 
 
@@ -67,6 +81,23 @@ class DataTests(unittest.TestCase):
         for y, m in ((True, 1), (2026, False), (2026, 13), (2026, 1.5), (0, 1)):
             with self.assertRaises(ValueError):
                 data.bua_til_dagsetningar(y, m)
+
+    def test_csv_encodings(self):
+        path = self.folder / data.STARFSFOLKSKRA
+        text = path.read_text(encoding="utf-8")
+        for enc in ("utf-8", "utf-8-sig", "latin1"):
+            path.write_text(text, encoding=enc)
+            t = data.lesa_starfsfolk(self.folder)
+            self.assertEqual(t["Nafn"].tolist(), ["h1", "h2"])
+            self.assertEqual(data.velja_manadarblokk(t, 11)["hlutfall"], "Nóvember")
+
+    def test_csv_quoted_decimal_and_no_excel(self):
+        c = data.velja_manadarblokk(self.t, 11)
+        col = list(self.t.columns).index(c["hlutfall"]) + 1
+        _breyta_reit(self.folder / data.STARFSFOLKSKRA, 2, col, "52,5%")
+        with patch("pandas.read_excel", side_effect=AssertionError("Excel á ekki að lesast")):
+            g = data.undirbua_gogn(2026, 11, self.folder, **self.settings)
+        self.assertEqual(g["mark"]["h1"], 10.5)
 
     def test_rows_and_duplicate(self):
         self.assertEqual(self.t["Nafn"].tolist(), ["h1", "h2"])
@@ -114,6 +145,44 @@ class DataTests(unittest.TestCase):
         t.loc[t["Nafn"] == "h2", c["leyfi"]] = .1
         with self.assertRaisesRegex(ValueError, "h2"):
             data.reikna_virkt_hlutfall(t, c, ["leyfi"])
+
+    def test_negative_clamp_audited(self):
+        c = data.velja_manadarblokk(self.t, 11)
+        t = self.t.copy()
+        t.loc[t["Nafn"] == "h2", c["leyfi"]] = .1
+        log = []
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            ratios = data.reikna_virkt_hlutfall(
+                t, c, ["leyfi"], neikvaett_i_null=True,
+                ar=2026, manudur=11, skraning=log)
+        self.assertEqual(ratios["h2"], 0)
+        self.assertEqual(ratios["h1"], .525)
+        self.assertEqual(len(w), 1)
+        self.assertIn("h2, 2026-11", str(w[0].message))
+        self.assertEqual(log[0]["gamalt"], -.1)
+        self.assertEqual(log[0]["nytt"], 0)
+        self.assertEqual(t.loc[t["Nafn"] == "h2", c["leyfi"]].iloc[0], .1)
+
+    def test_clamp_requires_period_and_boolean(self):
+        c = data.velja_manadarblokk(self.t, 11)
+        for kwargs in ({"neikvaett_i_null": True}, {"neikvaett_i_null": "True"}):
+            with self.assertRaises(ValueError):
+                data.reikna_virkt_hlutfall(self.t, c, ["leyfi"], **kwargs)
+
+    def test_pipeline_clamp_excludes(self):
+        path = self.folder / data.STARFSFOLKSKRA
+        c = data.velja_manadarblokk(self.t, 11)
+        col = list(self.t.columns).index(c["leyfi"]) + 1
+        _breyta_reit(path, 3, col, .1)
+        with self.assertWarnsRegex(UserWarning, "h2, 2026-11"):
+            g = data.undirbua_gogn(2026, 11, self.folder,
+                                  neikvaett_i_null=True, **self.settings)
+        self.assertEqual(g["starfsmenn"], ["h1"])
+        self.assertTrue(g["forsendur"]["neikvaett_i_null"])
+        self.assertEqual(g["leidrettingar"][0]["starfsmadur"], "h2")
+        self.assertEqual(g["leidrettingar"][0]["gamalt"], -.1)
+        self.assertEqual(_lesa_raðir(path)[2][col - 1], "0.1")
 
     def test_invalid_deductions(self):
         c = data.velja_manadarblokk(self.t, 11)
@@ -190,18 +259,15 @@ class DataTests(unittest.TestCase):
     def test_monthly_override_scope(self):
         c = data.velja_manadarblokk(self.t, 11)
         l = {"starfsmadur": "h1", "dalkur": "hlutfall", "manudur": 11,
-             "gamalt": .525, "nytt": .7, "astaeda": "Tilbúið prófdæmi"}
+             "gamalt": "0.525", "nytt": .7, "astaeda": "Tilbúið prófdæmi"}
         new, log = data._beita_leidrettingum(self.t, [l], 11, c)
         self.assertEqual(new.loc[new["Nafn"] == "h1", c["hlutfall"]].iloc[0], .7)
         new, log = data._beita_leidrettingum(self.t, [l], 10, data.velja_manadarblokk(self.t, 10))
         self.assertEqual(log, [])
 
     def test_text_requires_policy(self):
-        from openpyxl import load_workbook
-        path = self.folder / data.SKRA
-        w = load_workbook(path)
-        w["Hjúkkur"].cell(2, 2, "80% með verkefnavinnu")
-        w.save(path)
+        path = self.folder / data.STARFSFOLKSKRA
+        _breyta_reit(path, 2, 2, "80% með verkefnavinnu")
         with self.assertRaisesRegex(ValueError, "texti"):
             data.undirbua_gogn(2026, 11, self.folder, **self.settings)
         g = data.undirbua_gogn(2026, 11, self.folder, textastefna="manadarprosentur", **self.settings)
@@ -212,13 +278,9 @@ class DataTests(unittest.TestCase):
             data.undirbua_gogn(2026, 11, self.folder)
 
     def test_pipeline_explicit_override(self):
-        from openpyxl import load_workbook
-        path = self.folder / data.SKRA
-        w = load_workbook(path)
-        s = w["Hjúkkur"]
-        c = [cell.value for cell in s[1]].index("Vaktir") + 1
-        s.cell(2, c, "ÓÞEKKT")
-        w.save(path)
+        path = self.folder / data.STARFSFOLKSKRA
+        c = _lesa_raðir(path)[0].index("Vaktir") + 1
+        _breyta_reit(path, 2, c, "ÓÞEKKT")
         with self.assertRaisesRegex(ValueError, "h1"):
             data.undirbua_gogn(2026, 11, self.folder, **self.settings)
         l = {"starfsmadur": "h1", "dalkur": "Vaktir", "gamalt": "ÓÞEKKT",
@@ -226,7 +288,7 @@ class DataTests(unittest.TestCase):
         g = data.undirbua_gogn(2026, 11, self.folder, leidrettingar=[l], **self.settings)
         self.assertEqual(len(g["leidrettingar"]), 1)
         self.assertEqual(g["leidrettingar"][0]["gamalt"], "ÓÞEKKT")
-        self.assertEqual(load_workbook(path)["Hjúkkur"].cell(2, c).value, "ÓÞEKKT")
+        self.assertEqual(_lesa_raðir(path)[1][c - 1], "ÓÞEKKT")
 
     def test_bn_logged(self):
         skrifa_daemi(self.folder, bn=True)
@@ -235,17 +297,47 @@ class DataTests(unittest.TestCase):
         self.assertEqual(g["leidrettingar"][0]["nytt"], "NM")
 
     def test_unknown_shift_header(self):
-        from openpyxl import load_workbook
-        path = self.folder / data.SKRA
-        w = load_workbook(path)
-        w["Sheet2"].cell(2, 5, "XV")
-        w.save(path)
+        path = self.folder / data.MONNUNARSKRA
+        _breyta_reit(path, 2, 5, "XV")
         with self.assertRaisesRegex(ValueError, "vaktarfyrirsögn"):
             data.lesa_og_hreinsa_monnun(self.folder)
+
+    def test_exclusion_before_cleaning_and_audit(self):
+        path = self.folder / data.STARFSFOLKSKRA
+        col = _lesa_raðir(path)[0].index("Vaktir") + 1
+        _breyta_reit(path, 3, col, "ÓÞEKKT")
+        g = data.undirbua_gogn(2026, 11, self.folder,
+            sleppa_starfsmonnum={"h2": "Tilbúið frávik"}, **self.settings)
+        self.assertEqual(g["starfsmenn"], ["h1"])
+        self.assertEqual(g["utskildir"], [{"starfsmadur": "h2",
+            "astaeda": "Tilbúið frávik", "ar": 2026, "manudur": 11}])
+        self.assertNotIn("h2", g["texti"])
+        self.assertEqual(_lesa_raðir(path)[2][col - 1], "ÓÞEKKT")
+
+    def test_exclusion_requires_known_id_and_reason(self):
+        for exclusions in (["h2"], {"h999": "Frávik"}, {"h2": ""}, {"h2": None}):
+            with self.assertRaises(ValueError):
+                data.undirbua_gogn(2026, 11, self.folder,
+                    sleppa_starfsmonnum=exclusions, **self.settings)
 
 
 @unittest.skipUnless(os.getenv("HR_GAGNAMAPPA"), "HR_GAGNAMAPPA ekki skilgreind")
 class RealDataTests(unittest.TestCase):
+    def test_real_november_with_explicit_exclusions(self):
+        exclusions = {n: "Óútkljáð frávik í prófun" for n in
+                      ("h74", "h124", "h147", "h100")}
+        g = data.undirbua_gogn(2026, 11, os.environ["HR_GAGNAMAPPA"],
+            fra_drattur=["verkefni", "bor", "namsleyfi", "stjornun", "faeding", "leyfi", "veikindi"],
+            vaktir_100=30 / 7 * 5, textastefna="manadarprosentur",
+            jafnlangar_vaktir=True, sama_thorf_alla_daga=True,
+            sleppa_starfsmonnum=exclusions)
+        self.assertEqual(len(g["starfsmenn"]), 134)
+        self.assertEqual(len(g["utskildir"]), 4)
+        self.assertEqual(sum(g["monnunar_thorf"].values()), 1500)
+        for key in ("starfsmenn", "leyfdar", "haefni", "mark", "virkt", "texti"):
+            self.assertFalse(set(exclusions).intersection(g[key]))
+        data.sannreyna_gogn(g)
+
     def test_real_source(self):
         folder = Path(os.environ["HR_GAGNAMAPPA"])
         self.assertEqual(len(data.lesa_starfsfolk(folder)), 170)
@@ -260,6 +352,17 @@ class RealDataTests(unittest.TestCase):
                 vaktir_100=20, textastefna="manadarprosentur",
                 jafnlangar_vaktir=True, sama_thorf_alla_daga=True)
 
+    def test_real_november_clamp_keeps_other_checks(self):
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            with self.assertRaisesRegex(ValueError, "h74"):
+                data.undirbua_gogn(2026, 11, os.environ["HR_GAGNAMAPPA"],
+                    fra_drattur=["verkefni", "bor", "namsleyfi", "stjornun", "faeding", "leyfi", "veikindi"],
+                    vaktir_100=20, textastefna="manadarprosentur",
+                    jafnlangar_vaktir=True, sama_thorf_alla_daga=True,
+                    neikvaett_i_null=True)
+        self.assertTrue(any("h100, 2026-11" in str(item.message) for item in w))
+
     def test_real_october_unknown_codes_and_flag(self):
         folder = os.environ["HR_GAGNAMAPPA"]
         t = data.lesa_starfsfolk(folder)
@@ -269,7 +372,7 @@ class RealDataTests(unittest.TestCase):
             ["verkefni", "bor", "namsleyfi", "stjornun", "faeding", "leyfi", "veikindi"])
         active = t.loc[t["Nafn"].map(ratios) > 0]
         self.assertEqual(len(active), 139)
-        self.assertAlmostEqual(sum(ratios.values()), 98.579)
+        self.assertAlmostEqual(sum(ratios.values()), 98.58)
         with self.assertRaisesRegex(ValueError, "h74"):
             data.hreinsa_vaktir(active)
         with self.assertRaisesRegex(ValueError, "h147"):

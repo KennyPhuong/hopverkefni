@@ -1,11 +1,14 @@
-"""Excel-gögn fyrir mánaðarlegt vaktaplan; engin Gurobi-háð virkni.
+"""CSV-gögn fyrir mánaðarlegt vaktaplan; engin Gurobi-háð virkni.
 
 Frádráttarflokkar, fullt vaktamark og forgangur mánaðarprósenta gagnvart
 texta eru skýr inntök. Óútkljáð gögn valda ValueError. Hrá gögn eru óbreytt.
 """
 import calendar
+import csv
+import io
 import re
 import unicodedata
+import warnings
 from collections import Counter
 from datetime import date
 from math import isfinite
@@ -22,7 +25,8 @@ MANADARMERKINGAR = ("hlutfall", "verkefni", "bor", "nm", "namsleyfi",
                     "stjornun", "faeding", "leyfi", "veikindi")
 MANADARFYRIRSAGNIR = ("Verkefni", "BÖR", "NM", "Námsleyfi", "Stjórnun",
                       "Fæðing", "Leyfi", "Veikindi")
-SKRA = "HR-gognin (1).xlsx"
+STARFSFOLKSKRA = "HR-gognin(Hjúkkur).csv"
+MONNUNARSKRA = "HR-gognin(Sheet2).csv"
 
 
 def _texti(x):
@@ -55,19 +59,39 @@ def _tala(x, samhengi):
     return tala
 
 
-def _skraslod(gagnamappa):
-    """Leyfa möppu eða beina Excel-slóð; samræma Unicode við nafnaleit."""
+def _skraslod(gagnamappa, skra):
+    """Finna rétta CSV-skrá með Unicode-samræmdu nafni."""
     p = Path(gagnamappa).expanduser().resolve()
     if p.is_file():
-        if p.suffix.lower() != ".xlsx":
-            raise ValueError("Aðalheimild þarf að vera .xlsx-skjal.")
-        return p
+        if p.suffix.lower() != ".csv":
+            raise ValueError("Innlestrarheimild þarf að vera .csv-skrá.")
+        if _texti(p.name) == skra:
+            return p
+        p = p.parent  # Mönnunarskráin er við hlið starfsmannaskrárinnar.
     if not p.is_dir():
         raise FileNotFoundError(f"Gagnamappa er ekki til: {p}")
-    fs = [f for f in p.iterdir() if _texti(f.name) == SKRA]
+    fs = [f for f in p.iterdir() if _texti(f.name) == skra]
     if len(fs) != 1:
-        raise FileNotFoundError(f"Vantar ótvíræða heimild {SKRA!r} í {p}.")
+        raise FileNotFoundError(f"Vantar ótvíræða heimild {skra!r} í {p}.")
     return fs[0]
+
+
+def _lesa_csv(slod):
+    """Lesa textagildi óbreytt; UTF-8/BOM eða Latin-1 fyrir afhentar skrár.
+
+    csv.reader varðveitir endurteknar fyrirsagnir og leyfir styttri
+    titil-/samantektarraðir. Ekkert sjálfgefið NA-gildi er búið til úr texta.
+    """
+    hra = slod.read_bytes()
+    try:
+        texti = hra.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        texti = hra.decode("latin1")
+    try:
+        rows = list(csv.reader(io.StringIO(texti, newline=""), strict=True))
+    except csv.Error as e:
+        raise ValueError(f"Ógilt CSV-snið í {slod.name}: {e}") from e
+    return pd.DataFrame(rows, dtype=object)
 
 
 def bua_til_dagsetningar(ar, manudur):
@@ -81,15 +105,15 @@ def bua_til_dagsetningar(ar, manudur):
 
 
 def lesa_starfsfolk(gagnamappa):
-    """Lesa Hjúkkur, varðveita prósentur og velja einstök h-auðkenni.
+    """Lesa starfsmanna-CSV og velja einstök h-auðkenni.
 
     Hráar fyrirsagnir fylgja í attrs. Endurtekin heiti fá eigin viðskeyti,
     svo mánaðarval sé óháð viðskeytum pandas.
     """
-    slod = _skraslod(gagnamappa)
-    hra = pd.read_excel(slod, sheet_name="Hjúkkur", header=None, dtype=object, engine="openpyxl")
+    slod = _skraslod(gagnamappa, STARFSFOLKSKRA)
+    hra = _lesa_csv(slod)
     if hra.empty:
-        raise ValueError("Hjúkkur-blaðið er tómt.")
+        raise ValueError("Starfsmanna-CSV er tómt.")
     headers = ["" if _autt(x) else _texti(x) for x in hra.iloc[0]]
     # Hæfnidálkar eru fyrir framan Vaktir; mánaðar-BÖR er annar dálkur.
     skil = headers.index("Vaktir") if "Vaktir" in headers else 0
@@ -159,8 +183,20 @@ def breyta_prosentum(tafla, dalkar):
     return nytt
 
 
-def reikna_virkt_hlutfall(tafla, dalkakort, fra_drattur):
-    """Mánaðarhlutfall mínus eingöngu skýrt valdir frádráttarflokkar."""
+def reikna_virkt_hlutfall(tafla, dalkakort, fra_drattur, *,
+                         neikvaett_i_null=False, ar=None, manudur=None,
+                         skraning=None):
+    """Mánaðarhlutfall mínus valdir frádráttarflokkar.
+
+    Sjálfgefið eru neikvæð gildi villa. Með neikvaett_i_null=True verða
+    þau 0, með viðvörun og skráningu. Ár/mánuður eru þá nauðsynleg.
+    """
+    if not isinstance(neikvaett_i_null, bool):
+        raise ValueError("neikvaett_i_null þarf að vera True eða False.")
+    if neikvaett_i_null:
+        bua_til_dagsetningar(ar, manudur)
+    if skraning is not None and not isinstance(skraning, list):
+        raise ValueError("skraning þarf að vera listi eða None.")
     if fra_drattur is None or isinstance(fra_drattur, str):
         raise ValueError("Velja þarf fra_drattur sem lista; engin sjálfgefin NM-túlkun.")
     flokkar = tuple(fra_drattur)
@@ -176,7 +212,26 @@ def reikna_virkt_hlutfall(tafla, dalkakort, fra_drattur):
         if abs(v) < 1e-12:  # Eingöngu reikningsskekkja, ekki efnisleg klipping.
             v = 0.0
         if v < 0:
-            villur.append(f"{rod['Nafn']}: {base} - {lidur} = {v:.6g}")
+            if neikvaett_i_null:
+                skra = {
+                    "starfsmadur": rod["Nafn"], "dalkur": "virkt",
+                    "ar": ar, "manudur": manudur, "gamalt": v, "nytt": 0.0,
+                    "manadarhlutfall": base, "fradrattur": lidur.copy(),
+                    "astaeda": "Neikvætt reiknað hlutfall sett í núll samkvæmt "
+                               "valinni einföldun neikvaett_i_null=True.",
+                }
+                if skraning is not None:
+                    skraning.append(skra)
+                warnings.warn(
+                    f"{rod['Nafn']}, {ar}-{manudur:02d}: reiknað virkt hlutfall "
+                    f"{v:.6g} sett í 0; mánaðarhlutfall={base}, frádráttur={lidur}. "
+                    "Upprunalega gagnaskráin er óbreytt.",
+                    UserWarning,
+                    stacklevel=2,
+                )
+                v = 0.0
+            else:
+                villur.append(f"{rod['Nafn']}: {base} - {lidur} = {v:.6g}")
         nidur[rod["Nafn"]] = v
     if villur:
         raise ValueError("Neikvætt virkt hlutfall; leiðrétta áður en síað er:\n" + "\n".join(villur))
@@ -281,7 +336,8 @@ def _beita_leidrettingum(tafla, leidrettingar, manudur, dalkakort):
 
 def lesa_og_hreinsa_starfsfolk(gagnamappa, ar, manudur, *, fra_drattur=None,
                               vaktir_100=None, bn_sem_nm=False,
-                              leidrettingar=None, textastefna=None):
+                              leidrettingar=None, textastefna=None,
+                              neikvaett_i_null=False, sleppa_starfsmonnum=None):
     """Samþætta innlestur, mánaðarval og hreinsun.
 
     textastefna='manadarprosentur' er skýr einföldun: mánaðarprósentur
@@ -298,6 +354,19 @@ def lesa_og_hreinsa_starfsfolk(gagnamappa, ar, manudur, *, fra_drattur=None,
     if textastefna not in (None, "manadarprosentur"):
         raise ValueError("Óþekkt textastefna; leyfilegt er 'manadarprosentur'.")
     tafla = lesa_starfsfolk(gagnamappa)
+    # Skýr útilokun heilla starfsmannaraða, áður en gildi þeirra eru hreinsuð.
+    # Inntak: {auðkenni: ástæða}; þetta leiðréttir ekki hráu heimildina.
+    if sleppa_starfsmonnum is None:
+        sleppa_starfsmonnum = {}
+    if not isinstance(sleppa_starfsmonnum, dict):
+        raise ValueError("sleppa_starfsmonnum þarf að vera {auðkenni: ástæða}.")
+    if set(sleppa_starfsmonnum) - set(tafla["Nafn"]):
+        raise ValueError("Óþekkt auðkenni í sleppa_starfsmonnum.")
+    if any(not isinstance(a, str) or not a.strip() for a in sleppa_starfsmonnum.values()):
+        raise ValueError("Skrá þarf ástæðu fyrir hverjum útilokuðum starfsmanni.")
+    utskildir = [{"starfsmadur": n, "astaeda": a, "ar": ar, "manudur": manudur}
+                 for n, a in sleppa_starfsmonnum.items()]
+    tafla = tafla.loc[~tafla["Nafn"].isin(sleppa_starfsmonnum)].copy()
     kort = velja_manadarblokk(tafla, manudur, bn_sem_nm=bn_sem_nm)
     tafla, log = _beita_leidrettingum(tafla, leidrettingar, manudur, kort)
     if manudur == 8 and bn_sem_nm and tafla.attrs["fyrirsagnir"][
@@ -305,7 +374,9 @@ def lesa_og_hreinsa_starfsfolk(gagnamappa, ar, manudur, *, fra_drattur=None,
         log.append({"dalkur": kort["nm"], "gamalt": "BN", "nytt": "NM",
                     "manudur": 8, "astaeda": "Kallandi valdi bn_sem_nm=True sérstaklega."})
     tafla = breyta_prosentum(tafla, list(kort.values()))
-    virkt = reikna_virkt_hlutfall(tafla, kort, fra_drattur)
+    virkt = reikna_virkt_hlutfall(
+        tafla, kort, fra_drattur, neikvaett_i_null=neikvaett_i_null,
+        ar=ar, manudur=manudur, skraning=log)
     virk = tafla.loc[tafla["Nafn"].map(virkt) > 0].copy()
     textar = {}
     for _, rod in tafla.iterrows():
@@ -313,7 +384,13 @@ def lesa_og_hreinsa_starfsfolk(gagnamappa, ar, manudur, *, fra_drattur=None,
              if c in tafla and isinstance(rod[c], str) and not _autt(rod[c])}
         if t:
             textar[rod["Nafn"]] = t
-    if textar and textastefna is None:
+    # CSV geymir einnig venjulegar samningsprósentur sem texta.
+    # Ein tala/prósenta er ekki sama og óútkljáð frjáls athugasemd.
+    frjals_texti = any(
+        c == "Athugasemdir" or not re.fullmatch(r"\d+(?:[.,]\d+)?\s*%?", texti)
+        for t in textar.values() for c, texti in t.items()
+    )
+    if frjals_texti and textastefna is None:
         raise ValueError("Frjáls samnings-/athugasemdatexti er til staðar. "
                          "Veldu textastefna='manadarprosentur' aðeins sem skráða "
                          "einföldun; texti verður þá ekki sjálfkrafa að skorðum.")
@@ -322,13 +399,13 @@ def lesa_og_hreinsa_starfsfolk(gagnamappa, ar, manudur, *, fra_drattur=None,
     virkt = {n: virkt[n] for n in nofn}
     return {"starfsmenn": nofn, "leyfdar": leyfdar, "haefni": haefni,
             "mark": reikna_markvaktir(virkt, ar, manudur, vaktir_100),
-            "virkt": virkt, "leidrettingar": log, "texti": textar}
+            "virkt": virkt, "leidrettingar": log, "texti": textar,
+            "utskildir": utskildir}
 
 
 def lesa_og_hreinsa_monnun(gagnamappa):
-    """Telja hlutverkasæti undir MV/KV/NV á Sheet2."""
-    tafla = pd.read_excel(_skraslod(gagnamappa), sheet_name="Sheet2",
-                          header=None, dtype=object, engine="openpyxl")
+    """Telja hlutverkasæti undir MV/KV/NV í mönnunar-CSV."""
+    tafla = _lesa_csv(_skraslod(gagnamappa, MONNUNARSKRA))
     headers = []
     for j, rod in tafla.iterrows():
         gild = ["" if _autt(x) else _texti(x).upper() for x in rod]
@@ -356,7 +433,8 @@ def lesa_og_hreinsa_monnun(gagnamappa):
 
 def undirbua_gogn(ar, manudur, gagnamappa=None, *, fra_drattur=None,
                  vaktir_100=None, bn_sem_nm=False, leidrettingar=None,
-                 textastefna=None, jafnlangar_vaktir=None, sama_thorf_alla_daga=None):
+                 textastefna=None, jafnlangar_vaktir=None, sama_thorf_alla_daga=None,
+                 neikvaett_i_null=False, sleppa_starfsmonnum=None):
     """Aðalviðmót. Kallandi samþykkir einföldunarforsendur sérstaklega.
 
     mark er soft viðmið, ekki hörð mörk; þau bíða staðfestrar reglu.
@@ -372,16 +450,20 @@ def undirbua_gogn(ar, manudur, gagnamappa=None, *, fra_drattur=None,
         gagnamappa = Path(__file__).resolve().parent / "data" / "raw"
     sf = lesa_og_hreinsa_starfsfolk(
         gagnamappa, ar, manudur, fra_drattur=fra_drattur, vaktir_100=vaktir_100,
-        bn_sem_nm=bn_sem_nm, leidrettingar=leidrettingar, textastefna=textastefna)
+        bn_sem_nm=bn_sem_nm, leidrettingar=leidrettingar, textastefna=textastefna,
+        neikvaett_i_null=neikvaett_i_null, sleppa_starfsmonnum=sleppa_starfsmonnum)
     thorf = lesa_og_hreinsa_monnun(gagnamappa)
     gogn = {"ar": ar, "manudur": manudur, "dagar": dagar, "vaktir": VAKTIR,
             **{k: sf[k] for k in ("starfsmenn", "leyfdar", "haefni", "mark")},
             "hlutverk": sorted({r for s, r in thorf}),
             "monnunar_thorf": {(d, s, r): q for d in dagar for (s, r), q in thorf.items()},
             "virkt": sf["virkt"], "leidrettingar": sf["leidrettingar"], "texti": sf["texti"],
+            "utskildir": sf["utskildir"],
             "forsendur": {"fra_drattur": list(fra_drattur), "vaktir_100": vaktir_100,
                           "bn_sem_nm": bn_sem_nm, "textastefna": textastefna,
-                          "jafnlangar_vaktir": True, "sama_thorf_alla_daga": True}}
+                          "jafnlangar_vaktir": True, "sama_thorf_alla_daga": True,
+                          "neikvaett_i_null": neikvaett_i_null,
+                          "sleppa_starfsmonnum": dict(sleppa_starfsmonnum or {})}}
     sannreyna_gogn(gogn)
     return gogn
 
@@ -435,4 +517,3 @@ def sannreyna_gogn(gogn):
         raise ValueError("Mönnunarþörf er ekki samræmd milli daga í föstu daglega viðmótinu.")
     if any(not any(s == v and q > 0 for (v, r), q in fyrst.items()) for s in VAKTIR):
         raise ValueError("Mönnunarþörf vantar fyrir vaktategund.")
-

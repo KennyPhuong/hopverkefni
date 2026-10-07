@@ -1,8 +1,8 @@
-# Yfirferð upprunalegra gagna
+# Yfirferð CSV-gagna
 
-Heimild: HR-gognin (1).xlsx, blöðin Hjúkkur og Sheet2, yfirfarið 7. október
-2026. Verkefnalýsing og báðir CSV-hausar voru einnig lesnir. CSV-skrár
-eru ekki notaðar í aðalinnlestri vegna námundunar.
+Núverandi innlestur: HR-gognin(Hjúkkur).csv og HR-gognin(Sheet2).csv,
+yfirfarið 7. október 2026. Aðeins CSV-skrárnar eru lesnar af data.py.
+CSV-prósentur eru námundaðar; þær eru notaðar án endurheimtar Excel-gilda.
 
 ## Staðfest ósamræmi eða óútkljáð snið
 
@@ -12,19 +12,24 @@ eru ekki notaðar í aðalinnlestri vegna námundunar.
 | Óþekktur vaktakóði 12-20-KV | h74 | ValueError þegar virkur; staðfesta hvort sérstök vakt sé nauðsynleg |
 | Óþekktur vaktakóði MV-KV-4 | h124 | ValueError þegar virkur; staðfesta hvað 4 þýðir |
 | BN í stað NM | Ágúst, fjórði dálkur mánaðarblokkar | Staðfest vörpun þarf bn_sem_nm=True; hún er skráð |
-| Neikvætt virkt hlutfall | Tafla fyrir neðan | Villa fyrir síun; hvorki klippt í núll né röð felld hljóðlega út |
+| Neikvætt virkt hlutfall | Tafla fyrir neðan | Sjálfgefið villa; neikvaett_i_null=True setur í núll með viðvörun og skráningu |
 | Frjáls texti samhliða tölulegum prósentum | Vinnufyrirkomulag/Athugasemdir | Varðveittur; skýr textastefna þarf til að forgangsraða mánaðarprósentum |
 
-Eftirfarandi neikvæð hlutföll koma fram með samantektarreglu Excel:
+Eftirfarandi neikvæð hlutföll koma fram með frádráttarreglu sem var áður notuð við samanburð við Excel:
 frádráttur Verkefni, BÖR, Námsleyfi, Stjórnun, Fæðing, Leyfi og Veikindi,
 en ekki NM. Þetta er samanburðarregla í yfirferð, ekki samþykkt sjálfgefið.
 
 | Mánuður | Starfsmaður | Reiknað virkt hlutfall |
 |---|---|---:|
 | Febrúar | h78 | -1.0000 |
-| Febrúar | h88 | -0.1016 |
+| Febrúar | h88 | -0.1000 |
 | Mars | h87 | -0.8000 |
 | Nóvember | h100 | -0.1000 |
+
+Valin einföldun getur sett þessi reiknuðu gildi í núll með
+`neikvaett_i_null=True`. Gamla gildið, mánuður, starfsmaður og ástæða eru
+skráð. Það breytir ekki upprunalega CSV-skránum eða staðfestir túlkunina.
+Starfsmennirnir verða þá ekki tiltækir fyrir vaktavinnu þann mánuð.
 
 ## Jákvætt hlutfall án klínískrar hæfni
 
@@ -78,8 +83,16 @@ Sérstaklega þarf að yfirfara:
 - Endurtekin mánaðarheiti undirflokka fá ótvíræða dálka; hráir hausar
   fylgja með til staðfestingar á hverri mánaðarblokk.
 - Bil í MV - KV eru samræmd; kóðinn verður MV-KV.
-- Töluleg prósentunákvæmni Excel varðveitist; CSV-námundun er ekki flutt inn.
+- CSV-gildi, þar með talið námundun þeirra, eru notuð sem innlestrarheimild.
 - Skill-bör og mánaðar-BÖR eru aðgreind. Bör er ekki demand-hlutverk.
 
 Þetta er gagnayfirferð. Hún sannar hvorki heildarleysanleika MIP-líkans
 né að frjáls texti eða allar samningskröfur hafi verið útfærðar sem skorður.
+
+## Núverandi prófun með útilokunum
+
+Að beiðni notanda sleppir main_data_test.py h74, h124 og h147, og h100
+í nóvember. Ástæður eru skráðar í gogn["utskildir"]. Með þessum útilokunum
+var full gogn-orðabók búin til úr raunverulegu CSV-gögnunum fyrir nóvember:
+134 virkir starfsmenn og 1500 mönnunarsæti. Villurnar hér fyrir ofan eru
+enn óútkljáðar; útilokunin staðfestir ekki ný gildi þeirra.

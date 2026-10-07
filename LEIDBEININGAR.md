@@ -9,10 +9,15 @@ python -m pip install -r requirements.txt
 python -m unittest discover -s tests -v
 ```
 
-`requirements.txt` festir útgáfurnar sem voru prófaðar: pandas 2.2.3 og
-openpyxl 3.1.5. Engar breytingar voru gerðar á upprunalegu gagnaskránum.
+`requirements.txt` festir útgáfurnar sem voru prófaðar: pandas 2.2.3;
+openpyxl er ekki lengur nauðsynlegt. Engar breytingar voru gerðar á upprunalegu gagnaskránum.
 
 ## Kall úr main.py
+
+Innlestrarheimildir eru eingöngu `HR-gognin(Hjúkkur).csv` og
+`HR-gognin(Sheet2).csv`. Kóðinn notar ekki .xlsx-skjalið. CSV-gildin eru
+notuð eins og þau eru, þar með talið námundun þeirra. Hann styður
+Latin-1 og UTF-8 með eða án BOM.
 
 Eftirfarandi er stutt kall. Breyturnar `stadfestir_fra_drattarflokkar` og
 `stadfest_vaktamark_100` þarf að skilgreina með samþykktum gildum fyrir
@@ -28,6 +33,7 @@ gogn = undirbua_gogn(
     gagnamappa=Path(__file__).resolve().parent / "data" / "raw",
     fra_drattur=stadfestir_fra_drattarflokkar,
     vaktir_100=stadfest_vaktamark_100,
+    neikvaett_i_null=True,
     jafnlangar_vaktir=True,
     sama_thorf_alla_daga=True,
     textastefna="manadarprosentur",
@@ -45,9 +51,10 @@ gogn = undirbua_gogn(
   skráða einföldun. Annars þarf handvirka yfirferð fyrst.
 
 Ár og mánuður ákvarða almanakið. Notandi þarf að staðfesta að heimildin sé
-fyrir þetta ár; mánaðarheiti Excel-skjalanna staðfesta ekki sjálf gagnaárið.
+fyrir þetta ár; mánaðarheiti CSV-skjalanna staðfesta ekki sjálf gagnaárið.
 
-`gagnamappa` má einnig vera bein slóð á .xlsx-skrána. Sjálfgefin mappa er
+`gagnamappa` má einnig vera bein slóð á starfsmanna-CSV; mönnunar-CSV
+þarf að vera í sömu möppu. Sjálfgefin mappa er
 `data/raw` við hlið data.py, óháð því hvaðan forritið er keyrt.
 
 ## Frádráttarflokkar og vinnuskylda
@@ -55,7 +62,7 @@ fyrir þetta ár; mánaðarheiti Excel-skjalanna staðfesta ekki sjálf gagnaár
 Leyfilegar merkingar til frádráttar eru `verkefni`, `bor`, `nm`, `namsleyfi`,
 `stjornun`, `faeding`, `leyfi`, `veikindi`.
 
-Til samanburðar dregur samantekt Excel frá öllum þessum flokkum **nema nm**.
+Til samanburðar dregur samantekt upprunalega vinnubókarinnar frá öllum þessum flokkum **nema nm**.
 Kóðinn gerir það ekki sjálfgefna reglu. Þið gefið `fra_drattur` sérstaklega.
 `bn_sem_nm=True` leyfir vörpun BN í ágúst yfir í NM og skráir vörpunina;
 sjálfgefið er False og villuboð ef BN kemur fyrir.
@@ -66,6 +73,24 @@ búin til þar sem samþykkt námundunarregla vantar. Þetta er skjalfest
 ákvörðunarháð atriði, ekki óútfært fall.
 
 ## Leiðréttingar með rekjanleika
+
+### Neikvæð reiknuð hlutföll í núll
+
+Með `neikvaett_i_null=True` er `virkt = max(0, reiknað_hlutfall)`.
+Starfsmaður með neikvæða niðurstöðu fær því ekkert vinnuframboð og er
+síaður út. Viðvörun sýnir starfsmann, mánuð, neikvæða gildið og frádrátt.
+Upprunalega niðurstaðan og núllgildið fara í `gogn["leidrettingar"]` með
+ástæðu. Stillingin er líka í `gogn["forsendur"]`.
+
+Þetta er valin einföldun, ekki staðfest leiðrétting á CSV-gögnum.
+Sjálfgefið er `False`: neikvætt hlutfall veldur þá áfram villu.
+Stillingin meðhöndlar aðeins reiknaða niðurstöðu; ógild hrá prósentugildi,
+vaktakóðar og hæfnifánar eru enn villur.
+
+Í h100/nóvember-dæminu verður -0.1 að 0. Gögnin komast þá fram hjá
+hlutfallsvillunni, en næstu óútkljáðu vaktakóðar stöðva áfram keyrsluna.
+
+### Handvirkar staðfestar leiðréttingar
 
 `leidrettingar` er valfrjáls listi af orðabókum. Engar leiðréttingar fylgja
 sjálfgefið. Hver orðabók þarf:
@@ -98,6 +123,7 @@ Viðbætur eru:
 
 | Lykill | Innihald |
 |---|---|
+| `utskildir` | Auðkenni, ástæða, ár og mánuður fyrir sérstaklega útilokaðar raðir |
 | `virkt` | Virkt hlutfall fyrir starfsmenn sem eru teknir með |
 | `leidrettingar` | Gamalt/nytt gildi og ástæða hverrar framkvæmdrar leiðréttingar |
 | `texti` | Varðveittur samnings-/athugasemdatexti, einnig um óvirkt starfsfólk |
@@ -112,23 +138,47 @@ Hæfnifánar eru sannreyndir fyrir starfsfólk með jákvætt virkt hlutfall.
 
 ## Prófanir og raunverulegur innlestur
 
-25 próf voru keyrð og stóðust: 22 með tilbúnum gögnum og 3 með raunverulegu
-Excel-skjalinu. Prófin voru keyrð úr annarri vinnumöppu en skráarmöppunni.
+34 próf voru keyrð og stóðust: 29 með tilbúnum gögnum og 5 með raunverulegu
+CSV-skjalinu. Prófin voru keyrð úr annarri vinnumöppu en skráarmöppunni.
 
 Raunverulegu prófin eru valfrjáls hjá liðinu: skilgreinið `HR_GAGNAMAPPA`
 sem möppu upprunalegu gagnanna áður en unittest er keyrt. Án hennar eru
-þau þrjú próf merkt sleppt, ekki staðist.
+þau fimm próf merkt sleppt, ekki staðist.
 
 Staðfest á raunverulegu heimildinni:
 
 - 170 einstakar starfsmannaraðir fyrir síun.
 - Mönnun úr endurteknum sætum: MV=19, KV=19, NV=12.
-- Október: 139 jákvæð hlutföll og 98.579 FTE samkvæmt frádráttarreglu Excel.
+- Október: 139 jákvæð hlutföll og 98.58 FTE samkvæmt frádráttarreglu CSV.
 - Óþekktir vaktakóðar h74/h124 og ógildur hæfnifáni h147 greinast.
 - Nóvember: neikvætt virkt hlutfall hjá h100 veldur villu áður en síað er.
+- Með núllstillingu: h100 fær 0 og viðvörun, en óþekktir vaktakóðar eru
+  enn greindir. Sjálfgefna stranga leiðin er einnig prófuð.
 
-Full samþætt gagnakeyrsla tókst á tilbúnu Excel-dæmi, þar með talið skráðar
+Full samþætt gagnakeyrsla tókst á tilbúnu CSV-dæmi, þar með talið skráðar
 leiðréttingar og varðveisla hrárrar skráar. **Óleiðrétta raunheimildin skilar
 ekki enn samþykktum model-gögnum**: hún stöðvast rétt við óútkljáð gildi.
 
 Nánari gagnavillur og ákvarðanir eru í GAGNAVILLUR.md.
+
+## Sýna önnur gögn án núverandi frávika
+
+`main_data_test.py` sleppir h74, h124 og h147 sérstaklega; í nóvember einnig
+h100. Þetta eru útilokanir heilla raða, ekki ágiskaðar leiðréttingar.
+`data.py` útilokar enga starfsmenn sjálfgefið. Viðmótið er
+`sleppa_starfsmonnum={"h74": "Óútkljáður vaktakóði"}`: hver útilokun þarf
+þekkt auðkenni og ástæðu. Útilokanir eru skráðar í `gogn["utskildir"]`.
+Nýjar villur hjá öðrum starfsmönnum eru enn greindar.
+
+Raunkeyrsla fyrir nóvember með þessum fjórum útilokunum skilaði 134 virkum
+starfsmönnum, 30 dögum, 2067.428571 markvöktum og 1500 mönnunarsætum.
+Núllhlutföll eru líka síuð út samkvæmt venjulegri reglu. Allur gogn-dict
+er í gogn-november-2026.txt, þar með talin hæfni, leyfdar vaktir,
+mönnunarþörf, texti og prófunarforsendur. Þetta er gagnainnlestrarpróf,
+ekki leyst eða staðfest vaktaplan.
+
+```bash
+python main_data_test.py
+# Eða vista allt úttakið:
+python main_data_test.py > gogn-ut.txt
+```
