@@ -18,7 +18,6 @@ from gurobipy import GRB
 from data import lesa_novembergogn
 from model import byggja_model
 from check_solution import sannreyna_lausn
-from greining import fingrafar_gagna, vista_gaedamat, teikna_keyrslu
 
 MAPPA = Path(__file__).resolve().parent
 TIMAMORK = 60
@@ -97,16 +96,20 @@ def vista_nidurstodu(model, x, gogn, mappa):
     return yfirlit
 
 
-def keyra_likan(gogn, mappa, w_aukahelgi=50):
-    """Sameiginleg keyrsla með sömu solver-stillingum; engin warm start.
-
-    Hver keyrsla fær nýja möppu. Eingöngu helgarvigt er breytileg.
-    """
-    mappa = Path(mappa)
-    mappa.mkdir(parents=True, exist_ok=False)
+def main(gagnamappa=MAPPA):
+    """Slóð má gefa við prófun; verkefnismánuðurinn er alltaf nóvember 2026."""
     model = None
     try:
-        model, x = byggja_model(gogn, w_aukahelgi=w_aukahelgi)
+        gogn = lesa_novembergogn(gagnamappa)
+        print("Nóvember 2026:", len(gogn["starfsmenn"]), "virkir starfsmenn.", flush=True)
+        print("BÖR og NM eru hunsuð. h74=KV, h124=MV/KV, h147/a=1; h100 í orlofi.", flush=True)
+        print("ÓSTAÐFEST: aðrir frádráttarflokkar og fullt vaktamark 30/7*5. "
+              "Jafnlangar vaktir og sama daglega þörf eru einföldunarforsendur.", flush=True)
+        print("Mönnun/hvíld eru harðar; helgarmynstur er mjúkt. "
+              "Mánaðarmörk og textatakmarkanir eru óstaðfest.", flush=True)
+        mappa = MAPPA / "results" / f"einfalt_november_{datetime.now():%Y%m%d_%H%M%S}_{uuid4().hex[:6]}"
+        mappa.mkdir(parents=True)
+        model, x = byggja_model(gogn)
         model.Params.TimeLimit = TIMAMORK
         model.Params.MIPGap = GAP
         model.Params.Seed = 0
@@ -116,7 +119,6 @@ def keyra_likan(gogn, mappa, w_aukahelgi=50):
         model.optimize(framvinda)
         yfirlit = vista_nidurstodu(model, x, gogn, mappa)
         yfirlit["gurobi_version"] = list(gp.gurobi.version())
-        yfirlit["data_fingerprint"] = fingrafar_gagna(gogn)
         yfirlit["solver_parameters"] = {"TimeLimit": TIMAMORK, "MIPGap": GAP, "Seed": 0, "Threads": 2}
         if model.SolCount:
             check = sannreyna_lausn(gogn, mappa / "assignments.csv")
@@ -130,10 +132,6 @@ def keyra_likan(gogn, mappa, w_aukahelgi=50):
                     sum(v.X for v in model._aux["umframmonnun"].values()),
                 "aukahelgi": model._aux["stillingar"]["w_aukahelgi"] *
                     sum(v.X for v in model._aux["aukahelgi"].values())}
-            helgarhopar = {i: g for (i, g), v in model._aux["helgarhopur"].items() if v.X > .5}
-            skrifa_csv(mappa / "weekend_groups.csv", ["nurse_id", "reference_group"], sorted(helgarhopar.items()))
-            if check["pass"]:
-                yfirlit["quality"] = vista_gaedamat(gogn, mappa, helgarhopar)
         elif model.Status == GRB.INFEASIBLE:
             model.computeIIS()
             model.write(str(mappa / "infeasible.ilp"))
@@ -142,36 +140,20 @@ def keyra_likan(gogn, mappa, w_aukahelgi=50):
         model._progress.append((model.Runtime, yfirlit["objective"], yfirlit["bound"],
                                 reikna_gap(yfirlit["objective"], yfirlit["bound"])))
         skrifa_csv(mappa / "progress.csv", ["elapsed_seconds", "incumbent", "best_bound", "gap"], model._progress)
-        if yfirlit.get("checker_pass"):
-            teikna_keyrslu(mappa)
         print("\nStaða:", yfirlit["status"], "| Niðurstöður:", mappa)
         if model.SolCount == 0:
             print("Engin lausn fannst; ekkert vaktaplan var vistað.")
-            return yfirlit
+            return 2
         print("Úthlutaðar vaktir:", yfirlit["assignment_count"], "| Ómönnuð sæti:", yfirlit["unfilled_slots"])
         print("Óháð yfirferð innan mánaðar:", "STÓÐST" if yfirlit["checker_pass"] else "FÉLL")
         print("Þetta staðfestir ekki óþekkt mánaðarmörk, textatakmarkanir eða vinnuskylduforsendurnar.")
-        return yfirlit
-    finally:
-        if model is not None:
-            model.dispose()
-
-
-def main(gagnamappa=MAPPA):
-    """Baseline fyrir nóvember 2026; engin mánaðarvalmynd."""
-    try:
-        gogn = lesa_novembergogn(gagnamappa)
-        print("Nóvember 2026:", len(gogn["starfsmenn"]), "virkir starfsmenn.", flush=True)
-        print("ÓSTAÐFEST: vinnuhlutfallsfrádráttur, fullt vaktamark 30/7*5, "
-              "textatakmarkanir og mánaðarmörk.", flush=True)
-        mappa = MAPPA / "results" / f"einfalt_november_{datetime.now():%Y%m%d_%H%M%S}_{uuid4().hex[:6]}"
-        yfirlit = keyra_likan(gogn, mappa)
-        if not yfirlit["solution_count"]:
-            return 2
-        return 0 if yfirlit.get("checker_pass") else 3
+        return 0 if yfirlit["checker_pass"] else 3
     except (ValueError, FileNotFoundError, gp.GurobiError) as villa:
         print("Keyrsla stöðvað:", villa, file=sys.stderr)
         return 1
+    finally:
+        if model is not None:
+            model.dispose()
 
 
 if __name__ == "__main__":

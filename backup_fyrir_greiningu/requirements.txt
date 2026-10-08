@@ -1,3 +1,2 @@
 pandas==2.2.3
 gurobipy==13.0.3
-matplotlib==3.10.6

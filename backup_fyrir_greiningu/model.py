@@ -4,7 +4,6 @@ Fallið byggir líkanið; main.py leysir það. Reglurnar hér staðfesta ekki
 heildarfylgni við vinnulöggjöf. Vaktatímar og mánaðarmörk þurfa yfirferð.
 """
 from datetime import timedelta
-from math import isfinite
 import gurobipy as gp
 from gurobipy import GRB
 
@@ -29,13 +28,8 @@ def helgar_hopur(d):
     return (fostudagur.toordinal() // 7) % STILLINGAR["fjoldi_helgarhopa"]
 
 
-def byggja_model(gogn, w_aukahelgi=50):
+def byggja_model(gogn):
     """Skila Gurobi-líkani og x[nurse,date,shift,role]."""
-    if isinstance(w_aukahelgi, bool) or not isinstance(w_aukahelgi, (int, float)):
-        raise ValueError("Helgarvigt þarf að vera jákvæð tala.")
-    if not isfinite(w_aukahelgi) or w_aukahelgi <= 0:
-        raise ValueError("Helgarvigt þarf að vera jákvæð og endanleg.")
-    st = {**STILLINGAR, "w_aukahelgi": w_aukahelgi}
     starfsmenn, dagar = gogn["starfsmenn"], gogn["dagar"]
     thorf, mark = gogn["monnunar_thorf"], gogn["mark"]
     saga = gogn.get("fyrri_vaktir", {})
@@ -119,8 +113,8 @@ def byggja_model(gogn, w_aukahelgi=50):
 
     model.setObjective(STILLINGAR["w_vinnuskylda"] * (undir.sum() + yfir.sum())
                        + STILLINGAR["w_umframmonnun"] * umfram.sum()
-                       + st["w_aukahelgi"] * auka.sum(), GRB.MINIMIZE)
+                       + STILLINGAR["w_aukahelgi"] * auka.sum(), GRB.MINIMIZE)
     model._aux = {"undir_vinnuskyldu": undir, "yfir_vinnuskyldu": yfir,
                   "umframmonnun": umfram, "aukahelgi": auka,
-                  "helgarhopur": z, "stillingar": st}
+                  "helgarhopur": z, "stillingar": dict(STILLINGAR)}
     return model, x

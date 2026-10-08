@@ -11,7 +11,7 @@ import unittest
 from gurobipy import GRB
 from main import reikna_gap, vista_nidurstodu
 from check_solution import sannreyna_lausn
-from model import byggja_model, STILLINGAR
+from model import byggja_model
 
 
 def litil_gogn():
@@ -52,30 +52,6 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(len({(row["nurse_id"], row["date"]) for row in rows}), len(rows))
         self.assertEqual(self.gogn["mark"]["h1"], 4.5)
         self.assertTrue(sannreyna_lausn(self.gogn, self.mappa / "assignments.csv")["pass"])
-
-    def test_weekend_weight_only_changes_its_objective_coefficients(self):
-        other, _ = byggja_model(self.gogn, w_aukahelgi=25)
-        try:
-            self.model.update()
-            other.update()
-            self.assertEqual((self.model.NumVars, self.model.NumConstrs), (other.NumVars, other.NumConstrs))
-            for a, b in zip(self.model.getVars(), other.getVars()):
-                self.assertEqual(a.VarName, b.VarName)
-                self.assertEqual((a.LB, a.UB, a.VType), (b.LB, b.UB, b.VType))
-                if a.VarName.startswith("aukahelgi["):
-                    self.assertEqual((a.Obj, b.Obj), (50, 25))
-                else:
-                    self.assertEqual(a.Obj, b.Obj)
-            self.assertEqual(STILLINGAR["w_aukahelgi"], 50)
-            for a, b in zip(self.model.getConstrs(), other.getConstrs()):
-                self.assertEqual((a.ConstrName, a.Sense, a.RHS), (b.ConstrName, b.Sense, b.RHS))
-        finally:
-            other.dispose()
-
-    def test_invalid_weekend_weights_are_rejected(self):
-        for weight in (0, -1, True, "50", float("nan"), float("inf")):
-            with self.assertRaises(ValueError):
-                byggja_model(self.gogn, w_aukahelgi=weight)
 
     def test_hard_coverage_rejects_empty_roster(self):
         self.model.addConstr(self.x.sum() == 0)

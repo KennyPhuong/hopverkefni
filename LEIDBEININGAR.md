@@ -121,3 +121,40 @@ Myndrit, næmnigreining og lokaskýrsla eru ekki búin til í þessari vinnu.
 
 Gamla skordur_model.tex og eldri ZIP-pakkar lýsa eldri líkönum og eru ekki
 hluti nýja pakkans. Ekki nota gamla jöfnuskjalið sem lýsingu á þessari útgáfu.
+
+## Gæðamat og næmnigreining, viðbót 8. október
+
+Nú eru 60 próf: fyrri 49 auk sjö mælingaprófa, tveggja helgarvigtarprófa
+og tveggja næmniferlisprófa. Þau voru öll keyrð og stóðust með raunprófunum.
+Matplotlib 3.10.6 bætist við dependencies.
+
+```bash
+python -m pip install -r requirements.txt
+HR_GAGNAMAPPA="$PWD" python -m unittest discover -s tests -v
+python main.py
+python naemni.py
+```
+
+main.py keyrir áfram aðeins nóvember og grunnvigt 50. naemni.py framkvæmir
+þrjár sjálfstæðar keyrslur með vigtum 25, 50 og 100, sömu gögnum og sömu
+solver-stillingum. Lausnarleitin fær allt að 60 sekúndur í hverri keyrslu;
+innlestur, líkanagerð, checker og myndrit bætast við þann tíma.
+Engin almenn mánaðarvalmynd eða GUI var bætt við.
+
+greining.py reiknar mælikvarða úr assignments.csv eftir að checkerinn
+hefur staðist. Vinna undir/yfir marki, hlutfallsfrávik, NV-hlutfall, helgarvinna
+og V/T-hlutföll eru öll í quality_by_nurse.csv, einnig hjá fólki án vakta.
+Gildi sem ekki er hægt að reikna (t.d. hlutfall með nefnara 0) er tómt,
+ekki tilbúið núll. quality_by_shift.csv sundurliðar mönnun og umframmönnun.
+night_groups.csv ber saman NV innan hópa með sama vaktamynstur og mark.
+quality.json gefur samantekt og stærstu einstaklingsfrávik.
+weekend_groups.csv geymir raunverulega valda viðmiðunarhópa.
+solver_progress.png sýnir incumbent, best bound og gap; workload_deviation.png
+sýnir 20 stærstu frávik starfsmanna. CSV-skráin inniheldur alla starfsmenn.
+
+Næmnireikningur skrifar sensitivity.csv, experiment.json og sensitivity.png
+í sameiginlega niðurstöðumöppu, með eigin undirmöppu fyrir hverja vigt.
+Tóm mæligildi ef enginn incumbent finnst; fallinn checker fær ekki gæðaeinkunn.
+Gagnafingrafar, status, lausnafjöldi, tími og gap fylgja samanburðinum.
+Ekki bera saman mismunandi vigtuð markfallsgildi eins og þau séu sami mælikvarði.
+Sjá NAEMNI_NIDURSTODUR.md fyrir niðurstöður keyrslunnar á raunverulegum gögnum.
