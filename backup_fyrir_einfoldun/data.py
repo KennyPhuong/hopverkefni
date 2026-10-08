@@ -373,12 +373,7 @@ def lesa_og_hreinsa_starfsfolk(gagnamappa, ar, manudur, *, fra_drattur=None,
             list(tafla.columns).index(kort["nm"])] == "BN":
         log.append({"dalkur": kort["nm"], "gamalt": "BN", "nytt": "NM",
                     "manudur": 8, "astaeda": "Kallandi valdi bn_sem_nm=True sérstaklega."})
-    # Túlka aðeins hlutfall og flokka sem eru raunverulega notaðir.
-    # BÖR og NM eru ekki notuð í nóvemberverkefninu.
-    if (len(set(fra_drattur)) != len(fra_drattur) or "hlutfall" in fra_drattur
-            or set(fra_drattur) - set(kort)):
-        raise ValueError(f"Ógildir eða tvíteknir frádráttarflokkar: {fra_drattur}")
-    tafla = breyta_prosentum(tafla, [kort["hlutfall"], *[kort[k] for k in fra_drattur]])
+    tafla = breyta_prosentum(tafla, list(kort.values()))
     virkt = reikna_virkt_hlutfall(
         tafla, kort, fra_drattur, neikvaett_i_null=neikvaett_i_null,
         ar=ar, manudur=manudur, skraning=log)
@@ -470,35 +465,6 @@ def undirbua_gogn(ar, manudur, gagnamappa=None, *, fra_drattur=None,
                           "neikvaett_i_null": neikvaett_i_null,
                           "sleppa_starfsmonnum": dict(sleppa_starfsmonnum or {})}}
     sannreyna_gogn(gogn)
-    return gogn
-
-
-def lesa_novembergogn(gagnamappa):
-    """Eitt verkefni: nóvember 2026, með svörum kennara frá 7.–8. október.
-
-    BÖR/NM eru hunsuð. Aðrir frádráttarflokkar eru áfram skráð
-    bráðabirgðaforsenda; staðfesta þarf hvort mánaðarhlutfall sé þegar nettó.
-    Fimm jafnlangar vaktir á viku eru einnig óstaðfest vaktamarksforsenda.
-    """
-    heimild = "Svar kennara 7.–8. október 2026"
-    leidrettingar = [
-        {"starfsmadur": "h74", "dalkur": "Vaktir", "gamalt": "12-20-KV",
-         "nytt": "KV", "astaeda": heimild + ": valið aðeins KV, eins og heimilt er."},
-        {"starfsmadur": "h124", "dalkur": "Vaktir", "gamalt": "MV-KV-4",
-         "nytt": "MV-KV", "astaeda": heimild + ": talan 4 hunsuð; merking óskar óstaðfest."},
-        {"starfsmadur": "h147", "dalkur": "a", "gamalt": "11",
-         "nytt": 1, "astaeda": heimild + ": staðfest innsláttarvilla."},
-    ]
-    dagar = bua_til_dagsetningar(2026, 11)
-    gogn = undirbua_gogn(2026, 11, gagnamappa,
-        fra_drattur=["verkefni", "namsleyfi", "stjornun", "faeding", "leyfi", "veikindi"],
-        vaktir_100=len(dagar) / 7 * 5, jafnlangar_vaktir=True,
-        sama_thorf_alla_daga=True, textastefna="manadarprosentur",
-        neikvaett_i_null=True, leidrettingar=leidrettingar,
-        sleppa_starfsmonnum={"h100": heimild + ": í orlofi til 30.11; ekki tiltæk í nóvember."})
-    gogn["forsendur"].update(hunsadir_flokkar=["BÖR", "NM"],
-        vinnuhlutfall_stadfest=False, vaktamark_stadfest=False,
-        vaktamark_regla="30/7*5", gagnaar_stadfest=False)
     return gogn
 
 

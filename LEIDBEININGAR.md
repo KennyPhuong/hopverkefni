@@ -1,184 +1,123 @@
-# Gagnaundirbúningur tilbúinn til samþættingar
+# Einfalt nóvemberverkefni
 
-`data.py` hefur engin óútfærð föll eða `NotImplementedError`. Öll tólf föllin
-úr beinagrindinni eru útfærð. Gurobi er ekki nauðsynlegt fyrir þennan hluta.
-Uppsetning og prófanir, úr möppunni með `data.py`:
+Keyrslan er nú eingöngu fyrir nóvember 2026. Engin mánaðarvalmynd eða
+argparse-viðmót er í main.py. Gögn eru áfram lesin eingöngu úr CSV:
+HR-gognin(Hjúkkur).csv og HR-gognin(Sheet2).csv við hlið kóðans.
+Upprunalegu CSV-skrárnar eru óbreyttar.
+
+## Fjórar aðalskrár
+
+- data.py: lesa_novembergogn(gagnamappa) setur verkefnisforsendur og
+  staðfestar leiðréttingar á einn stað. Prófuð hreinsunarföll eru varðveitt.
+- model.py: byggja_model(gogn) býr til líkanið; leysir það ekki.
+- check_solution.py: les assignments.csv og athugar hörðu reglurnar án
+  þess að flytja inn model.py eða gurobipy.
+- main.py: les gögn, byggir/leysir, vistar og keyrir checker.
+
+main_data_test.py sýnir sömu gogn-orðabók án þess að leysa MIP.
+
+## Keyrsla
 
 ```bash
 python -m pip install -r requirements.txt
-python -m unittest discover -s tests -v
+HR_GAGNAMAPPA="$PWD" python -m unittest discover -s tests -v
+python main.py
 ```
 
-`requirements.txt` festir útgáfurnar sem voru prófaðar: pandas 2.2.3;
-openpyxl er ekki lengur nauðsynlegt. Engar breytingar voru gerðar á upprunalegu gagnaskránum.
+Slóðir eru reiknaðar út frá staðsetningu skránna, óháð vinnumöppu.
+main.py tekur ekki lengur --manudur, --ar eða --timamork. TimeLimit=60 og
+MIPGap=0.05 eru fastar stillingar efst í main.py. Engin föst starfsmannanöfn
+eru í skorðum líkansins. Dagsetningar/breytur eru áfram byggðar með lykkjum.
+Breyting á mánuði er ekki skilaviðmót verkefnisins.
 
-## Kall úr main.py
+## Staðfestar gagnabreytingar
 
-Innlestrarheimildir eru eingöngu `HR-gognin(Hjúkkur).csv` og
-`HR-gognin(Sheet2).csv`. Kóðinn notar ekki .xlsx-skjalið. CSV-gildin eru
-notuð eins og þau eru, þar með talið námundun þeirra. Hann styður
-Latin-1 og UTF-8 með eða án BOM.
+Kennarinn heimilar h74 aðeins KV, að hunsa 4 í h124 og staðfestir h147/a=1.
+Nýjasta svarið segir h100 í orlofi til 30.11; hún er útilokuð í nóvember.
+Kennarinn samþykkir að neikvætt reiknað virkt hlutfall tákni enga tiltækni.
+BÖR og NM eru ekki notuð í útreikningi, ekki dregin frá og ekki túlkuð sem
+hlutverk. Ónotuð prósentugildi eru ekki töluhreinsuð.
+Leiðréttingar/útilokanir eru skráðar í gogn og run.json, ekki framkvæmdar
+á upprunalegu skránum.
 
-Eftirfarandi er stutt kall. Breyturnar `stadfestir_fra_drattarflokkar` og
-`stadfest_vaktamark_100` þarf að skilgreina með samþykktum gildum fyrir
-valinn mánuð. Ekki setja 20 eða `dagar/7*5` sjálfkrafa í vaktamarkið.
+## Óstaðfestar forsendur
 
-```python
-from pathlib import Path
-from data import undirbua_gogn
+Frádráttur verkefni, námsleyfi, stjórnun, fæðing, leyfi og veikindi er
+varðveittur sem bráðabirgðaforsenda. Staðfesta þarf hvort hlutfall undir
+mánaðarheitinu sé þegar nettó vaktavinnuhlutfall. Ef svo er væri þessi
+frádráttur tvítalning. Þetta er nú merkt vinnuhlutfall_stadfest=False.
+Fullt vaktamark er 30/7*5, ónámundað. Jafnlangar vaktir og sama daglega
+þörf eru einföldunarforsendur. Gagnaárið er valið 2026, ekki staðfest af
+CSV-hausum. Vaktatímar, lög og dagsettar textatakmarkanir eru ekki fulltúlkuð.
+Óþekkt fyrri saga telst frí og engin framhaldsáætlun er gefin.
 
-gogn = undirbua_gogn(
-    ar=2026,
-    manudur=11,
-    gagnamappa=Path(__file__).resolve().parent / "data" / "raw",
-    fra_drattur=stadfestir_fra_drattarflokkar,
-    vaktir_100=stadfest_vaktamark_100,
-    neikvaett_i_null=True,
-    jafnlangar_vaktir=True,
-    sama_thorf_alla_daga=True,
-    textastefna="manadarprosentur",
-)
-```
+## Hörðu reglurnar
 
-Þetta dæmi samþykkir þrjár einföldunarforsendur sérstaklega:
+- Lágmarksmönnun í hverju hlutverki á hverri vakt; engin undirmönnunarbreyta.
+- Aðeins leyfðar vaktir og hæfni; mest ein vakt á dag.
+- Banna NV->MV, NV->KV og KV->MV á samliggjandi upphafsdögum.
+- Mest fjórar NV og sex vinnudagar í röð.
+- Eftir næturblokk með >=2 NV: svefndagur og engin MV næsta dag.
+- Ef laugardagur og sunnudagur eru frí: engin föstudags-KV/NV, þegar öll
+  þriggja daga helgin er innan mánaðarins.
 
-- **Jafnlangar vaktir:** talning vakta er viðeigandi. Fyrir mislangar vaktir
-  þarf stundaviðmót bæði hér og í model.py; fallið hafnar þeim núna.
-- **Sama þörf alla daga:** dagleg talning úr Sheet2 er endurtekin yfir mánuð.
-- **Mánaðarprósentur ráða hlutfalli:** frjáls texti er varðveittur, en ekki
-  sjálfkrafa breytt í dagsetta ófáanleika, samninga eða óskir. Árekstrar við
-  texta eru því ekki sjálfkrafa leystir. Veljið þessa stefnu aðeins sem
-  skráða einföldun. Annars þarf handvirka yfirferð fyrst.
+## Þrjú mjúk markmið
 
-Ár og mánuður ákvarða almanakið. Notandi þarf að staðfesta að heimildin sé
-fyrir þetta ár; mánaðarheiti CSV-skjalanna staðfesta ekki sjálf gagnaárið.
+| Liður | Vigt |
+|---|---:|
+| Vinnuskyldufrávik, undir og yfir marki | 10 |
+| Umframmönnun | 1 |
+| Vinna utan viðmiðunarhelgarhóps | 50 |
 
-`gagnamappa` má einnig vera bein slóð á starfsmanna-CSV; mönnunar-CSV
-þarf að vera í sömu möppu. Sjálfgefin mappa er
-`data/raw` við hlið data.py, óháð því hvaðan forritið er keyrt.
+Líkanið velur einn viðmiðunarhóp af þremur fyrir hvern starfsmann.
+Laugardags-/sunnudagsvinna og föstudags-KV/NV utan hóps kosta 50 á dag.
+Föstudags-MV kostar ekki aukahelgardag. Það er ekkert hart hámark á slíkum
+frávikum. Vigtin 50 er varðveitt úr síðustu repo-útgáfu, ekki krafa kennara.
 
-## Frádráttarflokkar og vinnuskylda
+Fjarlægt: mjúk mönnun, val um tvöfaldar vaktir, vikulegar fráviksbreytur,
+sjálfvirk NV-prósentutúlkun, óskakostnaður, jöfn vaktategundaskipting,
+50% hlutverkaviðmið, stakur-helgardagur refsing og 3-daga aukahelgarhámark.
+Vaktategundadreifing er mæld í check.json en ekki bestað eftir henni.
+Hlutverkaskipting og vaktategundadreifing þarf að meta áður en lokalausn
+verður valin; einföldunin er grunnlíkan, ekki staðfesting að þær séu góðar.
 
-Leyfilegar merkingar til frádráttar eru `verkefni`, `bor`, `nm`, `namsleyfi`,
-`stjornun`, `faeding`, `leyfi`, `veikindi`.
+## Niðurstöðuskrár
 
-Til samanburðar dregur samantekt upprunalega vinnubókarinnar frá öllum þessum flokkum **nema nm**.
-Kóðinn gerir það ekki sjálfgefna reglu. Þið gefið `fra_drattur` sérstaklega.
-`bn_sem_nm=True` leyfir vörpun BN í ágúst yfir í NM og skráir vörpunina;
-sjálfgefið er False og villuboð ef BN kemur fyrir.
+Hver keyrsla fær eigin möppu undir results/einfalt_november_<tími>_<id>/.
 
-`mark[n] = virkt[n] * vaktir_100` er varðveitt án námundunar. Það er soft
-viðmið, ekki harður hámarks-/lágmarksfjöldi. Hörð vinnuskyldumörk eru ekki
-búin til þar sem samþykkt námundunarregla vantar. Þetta er skjalfest
-ákvörðunarháð atriði, ekki óútfært fall.
-
-## Leiðréttingar með rekjanleika
-
-### Neikvæð reiknuð hlutföll í núll
-
-Með `neikvaett_i_null=True` er `virkt = max(0, reiknað_hlutfall)`.
-Starfsmaður með neikvæða niðurstöðu fær því ekkert vinnuframboð og er
-síaður út. Viðvörun sýnir starfsmann, mánuð, neikvæða gildið og frádrátt.
-Upprunalega niðurstaðan og núllgildið fara í `gogn["leidrettingar"]` með
-ástæðu. Stillingin er líka í `gogn["forsendur"]`.
-
-Þetta er valin einföldun, ekki staðfest leiðrétting á CSV-gögnum.
-Sjálfgefið er `False`: neikvætt hlutfall veldur þá áfram villu.
-Stillingin meðhöndlar aðeins reiknaða niðurstöðu; ógild hrá prósentugildi,
-vaktakóðar og hæfnifánar eru enn villur.
-
-Í h100/nóvember-dæminu verður -0.1 að 0. Gögnin komast þá fram hjá
-hlutfallsvillunni, en næstu óútkljáðu vaktakóðar stöðva áfram keyrsluna.
-
-### Handvirkar staðfestar leiðréttingar
-
-`leidrettingar` er valfrjáls listi af orðabókum. Engar leiðréttingar fylgja
-sjálfgefið. Hver orðabók þarf:
-
-```python
-{
-    "starfsmadur": "hX",
-    "dalkur": "a",
-    "gamalt": gamla_gildid,
-    "nytt": stadfesta_nyja_gildid,
-    "astaeda": "Ástæða og heimild staðfestingar",
-}
-```
-
-Þetta er sniðdæmi, ekki raunveruleg leiðrétting. Fyrir mánaðarprósentu er
-`dalkur` merking eins og `faeding` og `manudur` er nauðsynlegur. Ekki nota
-hrá mánaðardálkaheiti í leiðréttingum. Fyrir vaktakóða er `dalkur="Vaktir"`.
-Leiðréttingin er aðeins framkvæmd ef gamla gildið passar við heimildina.
-Óþekktir starfsmenn, vantar ástæðu eða úrelt gamalt gildi valda villu.
-
-Kóðinn breytir aðeins afriti í minni; upprunalega skráin er aldrei vistuð yfir.
-
-## Viðmót við model.py
-
-Upprunalegir lyklar haldast:
-`ar`, `manudur`, `dagar`, `vaktir`, `starfsmenn`, `leyfdar`, `haefni`, `mark`,
-`hlutverk`, `monnunar_thorf`.
-
-Viðbætur eru:
-
-| Lykill | Innihald |
+| Skrá | Innihald |
 |---|---|
-| `utskildir` | Auðkenni, ástæða, ár og mánuður fyrir sérstaklega útilokaðar raðir |
-| `virkt` | Virkt hlutfall fyrir starfsmenn sem eru teknir með |
-| `leidrettingar` | Gamalt/nytt gildi og ástæða hverrar framkvæmdrar leiðréttingar |
-| `texti` | Varðveittur samnings-/athugasemdatexti, einnig um óvirkt starfsfólk |
-| `forsendur` | Frádráttarflokkar, full vinnuskylda og valdar einföldunarforsendur |
+| assignments.csv | nurse_id,date,shift,role; ISO-dagsetningar |
+| coverage.csv | date,shift,role,required,assigned,missing |
+| workload.csv | nurse_id,target,assigned,deviation |
+| progress.csv | elapsed_seconds,incumbent,best_bound,gap |
+| check.json | Pass/fail innan mánaðar, villur, mönnun og vinnuframlag |
+| run.json | Solver-staða, gap, forsendur, leiðréttingar og markfallssundurliðun |
+| solver.log | Gurobi-framvinda |
+| infeasible.ilp | IIS ef líkanið er staðfest óleysanlegt |
 
-`dagar` eru datetime.date; eldri model.py-kóði sem notar heiltöludaga þarf
-að nota dagsetningareikning, til dæmis timedelta(days=1).
+Engin lausn er vistuð ef enginn incumbent fannst. Exit 0 þýðir lausn sem
+stenst útfærðar reglur innan mánaðar; 1 keyrsluvilla, 2 enginn incumbent,
+3 lausn sem fellur á checker. Exit 0 þýðir ekki staðfesta heildarfylgni við
+lög, texta eða mánaðarmörk. boundaries_verified er áfram False.
 
-Hæfnifánar eru sannreyndir fyrir starfsfólk með jákvætt virkt hlutfall.
-`bör` er varðveitt í hráu starfsmannatöflunni en ekki talið demand-hlutverk.
-Óvirkar raðir eru ekki látnar mynda ómönnunarhæfni eða vaktakóðavillur.
+## Prófun 8. október 2026
 
-## Prófanir og raunverulegur innlestur
+49 próf: 30 tilbúin gagnapróf, 6 raunveruleg CSV-próf, 5 smá líkanapróf
+og 8 checker-próf. Án HR_GAGNAMAPPA er raunprófunum sex sleppt.
 
-34 próf voru keyrð og stóðust: 29 með tilbúnum gögnum og 5 með raunverulegu
-CSV-skjalinu. Prófin voru keyrð úr annarri vinnumöppu en skráarmöppunni.
+Raunkeyrsla á akademísku Gurobi 13.0.3: 137 virkir starfsmenn, 99.28
+reiknuð stöðugildi, 2127.428571 markvaktir og 1500 mönnunarsæti.
+78126 breytur og 32333 skorður. Við 60.02 sekúndur fannst lausn með
+2096 úthlutunum og 0 ómönnuðum sætum. Checker stóðst fyrir sitt umfang.
+Status TIME_LIMIT, gap 27.53%; besta mögulega markfallsgildið er óstaðfest.
+Umframmönnun 596 og heildarvinnuskyldufrávik 47.142857 vaktareiningar.
+Kostnaður: vinnuskylda um 471.43, umframmönnun 596, aukahelgar 2100;
+heild um 3167.43. Þetta er ekki sambærilegt við gamla markfallið með
+undirmönnunarrefsingu, því gögn og markfall hafa bæði breyst.
 
-Raunverulegu prófin eru valfrjáls hjá liðinu: skilgreinið `HR_GAGNAMAPPA`
-sem möppu upprunalegu gagnanna áður en unittest er keyrt. Án hennar eru
-þau fimm próf merkt sleppt, ekki staðist.
+C ætti að yfirfara checkerinn og sýnishorn raunlausnarinnar sjálfstætt.
+Myndrit, næmnigreining og lokaskýrsla eru ekki búin til í þessari vinnu.
 
-Staðfest á raunverulegu heimildinni:
-
-- 170 einstakar starfsmannaraðir fyrir síun.
-- Mönnun úr endurteknum sætum: MV=19, KV=19, NV=12.
-- Október: 139 jákvæð hlutföll og 98.58 FTE samkvæmt frádráttarreglu CSV.
-- Óþekktir vaktakóðar h74/h124 og ógildur hæfnifáni h147 greinast.
-- Nóvember: neikvætt virkt hlutfall hjá h100 veldur villu áður en síað er.
-- Með núllstillingu: h100 fær 0 og viðvörun, en óþekktir vaktakóðar eru
-  enn greindir. Sjálfgefna stranga leiðin er einnig prófuð.
-
-Full samþætt gagnakeyrsla tókst á tilbúnu CSV-dæmi, þar með talið skráðar
-leiðréttingar og varðveisla hrárrar skráar. **Óleiðrétta raunheimildin skilar
-ekki enn samþykktum model-gögnum**: hún stöðvast rétt við óútkljáð gildi.
-
-Nánari gagnavillur og ákvarðanir eru í GAGNAVILLUR.md.
-
-## Sýna önnur gögn án núverandi frávika
-
-`main_data_test.py` sleppir h74, h124 og h147 sérstaklega; í nóvember einnig
-h100. Þetta eru útilokanir heilla raða, ekki ágiskaðar leiðréttingar.
-`data.py` útilokar enga starfsmenn sjálfgefið. Viðmótið er
-`sleppa_starfsmonnum={"h74": "Óútkljáður vaktakóði"}`: hver útilokun þarf
-þekkt auðkenni og ástæðu. Útilokanir eru skráðar í `gogn["utskildir"]`.
-Nýjar villur hjá öðrum starfsmönnum eru enn greindar.
-
-Raunkeyrsla fyrir nóvember með þessum fjórum útilokunum skilaði 134 virkum
-starfsmönnum, 30 dögum, 2067.428571 markvöktum og 1500 mönnunarsætum.
-Núllhlutföll eru líka síuð út samkvæmt venjulegri reglu. Allur gogn-dict
-er í gogn-november-2026.txt, þar með talin hæfni, leyfdar vaktir,
-mönnunarþörf, texti og prófunarforsendur. Þetta er gagnainnlestrarpróf,
-ekki leyst eða staðfest vaktaplan.
-
-```bash
-python main_data_test.py
-# Eða vista allt úttakið:
-python main_data_test.py > gogn-ut.txt
-```
+Gamla skordur_model.tex og eldri ZIP-pakkar lýsa eldri líkönum og eru ekki
+hluti nýja pakkans. Ekki nota gamla jöfnuskjalið sem lýsingu á þessari útgáfu.

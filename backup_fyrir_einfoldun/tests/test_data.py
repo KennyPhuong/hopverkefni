@@ -273,15 +273,6 @@ class DataTests(unittest.TestCase):
         g = data.undirbua_gogn(2026, 11, self.folder, textastefna="manadarprosentur", **self.settings)
         self.assertIn("h1", g["texti"])
 
-    def test_unused_bor_nm_are_ignored(self):
-        path = self.folder / data.STARFSFOLKSKRA
-        c = data.velja_manadarblokk(self.t, 11)
-        for key in ("bor", "nm"):
-            col = list(self.t.columns).index(c[key]) + 1
-            _breyta_reit(path, 2, col, "Ekki notað")
-        g = data.undirbua_gogn(2026, 11, self.folder, **self.settings)
-        self.assertEqual(g["mark"]["h1"], 10.5)
-
     def test_explicit_assumptions(self):
         with self.assertRaisesRegex(ValueError, "jafnlangar"):
             data.undirbua_gogn(2026, 11, self.folder)
@@ -332,20 +323,6 @@ class DataTests(unittest.TestCase):
 
 @unittest.skipUnless(os.getenv("HR_GAGNAMAPPA"), "HR_GAGNAMAPPA ekki skilgreind")
 class RealDataTests(unittest.TestCase):
-    def test_simplified_november_teacher_decisions(self):
-        folder = os.environ["HR_GAGNAMAPPA"]
-        g = data.lesa_novembergogn(folder)
-        self.assertEqual(len(g["starfsmenn"]), 137)
-        self.assertEqual(g["leyfdar"]["h74"], ["KV"])
-        self.assertEqual(g["leyfdar"]["h124"], ["MV", "KV"])
-        self.assertIn("A", g["haefni"]["h147"])
-        self.assertNotIn("h100", g["starfsmenn"])
-        self.assertFalse({"bor", "nm"}.intersection(g["forsendur"]["fra_drattur"]))
-        self.assertEqual(len(g["leidrettingar"]), 3)
-        self.assertEqual(sum(g["monnunar_thorf"].values()), 1500)
-        t = data.lesa_starfsfolk(folder)
-        self.assertEqual(t.loc[t["Nafn"] == "h147", "a"].iloc[0], "11")
-
     def test_real_november_with_explicit_exclusions(self):
         exclusions = {n: "Óútkljáð frávik í prófun" for n in
                       ("h74", "h124", "h147", "h100")}

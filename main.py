@@ -1,29 +1,27 @@
-"""Tengja CSV-gögn og núverandi MIP; vista lausn og sýna mönnunarskort.
+"""Keyra eitt verkefni: nóvember 2026. Engin mánaðarvalmynd eða CLI-stillingar.
 
-Þetta er samþættingarprófun með skráðum einföldunarforsendum.
-Óháður lausnarchecker, myndrit og skýrsla eru ekki hluti þessarar skrár.
+Les CSV, byggir/leysir líkan, vistar lausn og keyrir óháða yfirferð.
+Óstaðfestar gagnatúlkanir eru sýndar og varðveittar í run.json.
 """
-import argparse
 from collections import Counter
 import csv
 from datetime import datetime
-import hashlib
 import json
 import math
 from pathlib import Path
-import shutil
 import sys
-import tempfile
 from uuid import uuid4
 
 import gurobipy as gp
 from gurobipy import GRB
 
-from data import bua_til_dagsetningar, undirbua_gogn
+from data import lesa_novembergogn
 from model import byggja_model
+from check_solution import sannreyna_lausn
 
 MAPPA = Path(__file__).resolve().parent
-FRA_DRATTUR = ["verkefni", "bor", "namsleyfi", "stjornun", "faeding", "leyfi", "veikindi"]
+TIMAMORK = 60
+GAP = .05
 
 
 def skrifa_csv(slod, haus, radir):
@@ -47,23 +45,6 @@ def framvinda(model, where):
     bound = bound if abs(bound) < 1e90 else None
     gap = reikna_gap(incumbent, bound)
     model._progress.append((timi, incumbent, bound, gap))
-
-
-def log_slod(mappa):
-    """Slóð fyrir Gurobi-loggskrá sem Gurobi getur opnað.
-
-    Gurobi á Windows ræður ekki við stafi utan ASCII (t.d. ó, ð) í slóðum.
-    Ef niðurstöðumappan hefur slíka stafi er loggurinn skrifaður í
-    tímabundna möppu og færður í niðurstöðumöppuna eftir keyrslu.
-    Skilar (slóð fyrir Gurobi, lokaslóð) eða (None, None) ef engin nothæf slóð finnst.
-    """
-    lokaslod = mappa / "solver.log"
-    if str(lokaslod).isascii():
-        return lokaslod, lokaslod
-    tmp = Path(tempfile.gettempdir()) / f"gurobi_{uuid4().hex}.log"
-    if str(tmp).isascii():
-        return tmp, lokaslod
-    return None, None
 
 
 def reikna_gap(incumbent, bound):
@@ -115,90 +96,58 @@ def vista_nidurstodu(model, x, gogn, mappa):
     return yfirlit
 
 
-def main(argv=None):
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--ar", type=int, default=2026)
-    parser.add_argument("--manudur", type=int, default=11)
-    parser.add_argument("--gagnamappa", type=Path, default=MAPPA)
-    parser.add_argument("--nidurstodumappa", type=Path, default=MAPPA / "results")
-    parser.add_argument("--vaktir-100", type=float,
-        help="Fullt vaktamark; annars sýnileg prófunarforsenda dagar/7*5.")
-    parser.add_argument("--timamork", type=float, default=60)
-    parser.add_argument("--gap", type=float, default=.05)
-    args = parser.parse_args(argv)
-    if not math.isfinite(args.timamork) or args.timamork <= 0:
-        parser.error("timamork þurfa að vera jákvæð og endanleg.")
-    if not math.isfinite(args.gap) or not 0 <= args.gap <= 1:
-        parser.error("gap þarf að vera á bilinu 0–1.")
-
+def main(gagnamappa=MAPPA):
+    """Slóð má gefa við prófun; verkefnismánuðurinn er alltaf nóvember 2026."""
     model = None
     try:
-        dagar = bua_til_dagsetningar(args.ar, args.manudur)
-        fullt = args.vaktir_100 if args.vaktir_100 is not None else len(dagar) / 7 * 5
-        sleppa = {"h74": "Óútkljáður vaktakóði 12-20-KV.",
-                  "h124": "Óútkljáður vaktakóði MV-KV-4.",
-                  "h147": "Ógildur hæfnifáni a=11."}
-        if args.manudur == 11:
-            sleppa["h100"] = "Neikvætt reiknað hlutfall í nóvember."
-        print("PRÓFUNARFORSENDUR: frádráttur án NM; jafnlangar vaktir; sama þörf alla daga; "
-              "mánaðarprósentur ráða; neikvætt virkt hlutfall verður 0.", flush=True)
-        print("Fullt vaktamark:", round(fullt, 4),
-              "(prófunarregla dagar/7*5)" if args.vaktir_100 is None else "(gefið inntak)", flush=True)
-        print("Útilokanir:", sleppa, flush=True)
-        gogn = undirbua_gogn(args.ar, args.manudur, args.gagnamappa,
-            fra_drattur=FRA_DRATTUR, vaktir_100=fullt, jafnlangar_vaktir=True,
-            sama_thorf_alla_daga=True, textastefna="manadarprosentur",
-            neikvaett_i_null=True, sleppa_starfsmonnum=sleppa)
-        print(f"Gögn tilbúin: {len(gogn['starfsmenn'])} starfsmenn, {len(dagar)} dagar.", flush=True)
-        print("Líkanið hefur harða mönnun og mjúka helgarhópa. Fyrri vaktir og óskir "
-              "eru ekki gefnar; hvíld yfir mánaðarmörk er því ekki staðfest.", flush=True)
-        mappa = args.nidurstodumappa.resolve() / (
-            f"{args.ar}-{args.manudur:02d}_{datetime.now():%Y%m%d_%H%M%S}_{uuid4().hex[:6]}")
+        gogn = lesa_novembergogn(gagnamappa)
+        print("Nóvember 2026:", len(gogn["starfsmenn"]), "virkir starfsmenn.", flush=True)
+        print("BÖR og NM eru hunsuð. h74=KV, h124=MV/KV, h147/a=1; h100 í orlofi.", flush=True)
+        print("ÓSTAÐFEST: aðrir frádráttarflokkar og fullt vaktamark 30/7*5. "
+              "Jafnlangar vaktir og sama daglega þörf eru einföldunarforsendur.", flush=True)
+        print("Mönnun/hvíld eru harðar; helgarmynstur er mjúkt. "
+              "Mánaðarmörk og textatakmarkanir eru óstaðfest.", flush=True)
+        mappa = MAPPA / "results" / f"einfalt_november_{datetime.now():%Y%m%d_%H%M%S}_{uuid4().hex[:6]}"
         mappa.mkdir(parents=True)
         model, x = byggja_model(gogn)
-        model.Params.TimeLimit = args.timamork
-        model.Params.MIPGap = args.gap
+        model.Params.TimeLimit = TIMAMORK
+        model.Params.MIPGap = GAP
         model.Params.Seed = 0
         model.Params.Threads = 2
-        gurobi_log, loka_log = log_slod(mappa)
-        if gurobi_log is not None:
-            model.Params.LogFile = str(gurobi_log)
-        else:
-            print("Aðvörun: engin ASCII-slóð fyrir solver.log; loggur ekki vistaður.", flush=True)
+        model.Params.LogFile = str(mappa / "solver.log")
         model._progress = []
         model.optimize(framvinda)
-        if gurobi_log is not None and gurobi_log != loka_log:
-            model.Params.LogFile = ""          # loka loggskránni áður en hún er færð
-            shutil.move(str(gurobi_log), str(loka_log))
         yfirlit = vista_nidurstodu(model, x, gogn, mappa)
-        yfirlit.update(gurobi_version=list(gp.gurobi.version()),
-            solver_parameters={"TimeLimit": args.timamork, "MIPGap": args.gap, "Seed": 0, "Threads": 2},
-            vaktamark_heimild="inntak" if args.vaktir_100 is not None else "profun: dagar/7*5")
-        # Vista fingraför CSV-heimilda og kóðans svo keyrslan sé rekjanleg.
-        heimild = args.gagnamappa.resolve()
-        if heimild.is_file():
-            heimild = heimild.parent
-        skrar = [*sorted(heimild.glob("HR-gognin*.csv")),
-                 MAPPA / "data.py", MAPPA / "model.py", MAPPA / "main.py"]
-        yfirlit["sha256"] = {str(p): hashlib.sha256(p.read_bytes()).hexdigest() for p in skrar}
-        yfirlit["boundaries"] = "Engin saga; óþekktar fyrri vaktir teljast frí. Engin framhaldsáætlun."
+        yfirlit["gurobi_version"] = list(gp.gurobi.version())
+        yfirlit["solver_parameters"] = {"TimeLimit": TIMAMORK, "MIPGap": GAP, "Seed": 0, "Threads": 2}
+        if model.SolCount:
+            check = sannreyna_lausn(gogn, mappa / "assignments.csv")
+            (mappa / "check.json").write_text(json.dumps(check, ensure_ascii=False, indent=2), encoding="utf-8")
+            yfirlit.update(independent_checker_run=True, checker_pass=check["pass"],
+                           boundaries_verified=check["boundaries_verified"])
+            yfirlit["objective_components"] = {
+                "vinnuskylda": model._aux["stillingar"]["w_vinnuskylda"] *
+                    sum(v.X for key in ("undir_vinnuskyldu", "yfir_vinnuskyldu") for v in model._aux[key].values()),
+                "umframmonnun": model._aux["stillingar"]["w_umframmonnun"] *
+                    sum(v.X for v in model._aux["umframmonnun"].values()),
+                "aukahelgi": model._aux["stillingar"]["w_aukahelgi"] *
+                    sum(v.X for v in model._aux["aukahelgi"].values())}
+        elif model.Status == GRB.INFEASIBLE:
+            model.computeIIS()
+            model.write(str(mappa / "infeasible.ilp"))
         (mappa / "run.json").write_text(json.dumps(yfirlit, ensure_ascii=False, indent=2,
                                                   allow_nan=False), encoding="utf-8")
-        final_gap = reikna_gap(yfirlit["objective"], yfirlit["bound"])
-        model._progress.append((model.Runtime, yfirlit["objective"], yfirlit["bound"], final_gap))
+        model._progress.append((model.Runtime, yfirlit["objective"], yfirlit["bound"],
+                                reikna_gap(yfirlit["objective"], yfirlit["bound"])))
         skrifa_csv(mappa / "progress.csv", ["elapsed_seconds", "incumbent", "best_bound", "gap"], model._progress)
-        print("\nStaða:", yfirlit["status"], "| Lausnir:", model.SolCount)
-        print("Niðurstöður:", mappa)
+        print("\nStaða:", yfirlit["status"], "| Niðurstöður:", mappa)
         if model.SolCount == 0:
-            print("Engin úthlutun vistuð: engin lausn fannst í þessari keyrslu.")
+            print("Engin lausn fannst; ekkert vaktaplan var vistað.")
             return 2
-        print("Úthlutaðar vaktir:", yfirlit["assignment_count"])
-        print("Ómönnuð sæti:", yfirlit["unfilled_slots"])
-        if not yfirlit["coverage_met"]:
-            print("Mönnunarþörf er ekki uppfyllt. Þetta vaktaplan er ekki tilbúið til skila.")
-            return 3
-        print("Mönnunarþörf uppfyllt. Óháður checker hefur ekki verið keyrður.")
-        return 0
+        print("Úthlutaðar vaktir:", yfirlit["assignment_count"], "| Ómönnuð sæti:", yfirlit["unfilled_slots"])
+        print("Óháð yfirferð innan mánaðar:", "STÓÐST" if yfirlit["checker_pass"] else "FÉLL")
+        print("Þetta staðfestir ekki óþekkt mánaðarmörk, textatakmarkanir eða vinnuskylduforsendurnar.")
+        return 0 if yfirlit["checker_pass"] else 3
     except (ValueError, FileNotFoundError, gp.GurobiError) as villa:
         print("Keyrsla stöðvað:", villa, file=sys.stderr)
         return 1
