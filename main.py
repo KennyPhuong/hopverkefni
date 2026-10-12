@@ -141,7 +141,11 @@ def keyra_likan(gogn, mappa, w_aukahelgi=50):
                 "umframmonnun": model._aux["stillingar"]["w_umframmonnun"] *
                     sum(v.X for v in model._aux["umframmonnun"].values()),
                 "aukahelgi": model._aux["stillingar"]["w_aukahelgi"] *
-                    sum(v.X for v in model._aux["aukahelgi"].values())}
+                    sum(v.X for v in model._aux["aukahelgi"].values()),
+                "vaktajafnvaegi": model._aux["stillingar"]["w_vaktajafnvaegi"] *
+                    sum(v.X for v in model._aux["ojafnvaegi_vakta"].values()),
+                "vaktstjori": model._aux["stillingar"]["w_vaktstjori"] *
+                    sum(v.X for v in model._aux["ofmikid_vaktstjori"].values())}
             helgarhopar = {i: g for (i, g), v in model._aux["helgarhopur"].items() if v.X > .5}
             skrifa_csv(mappa / "weekend_groups.csv", ["nurse_id", "reference_group"], sorted(helgarhopar.items()))
             if check["pass"]:

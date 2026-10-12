@@ -1,4 +1,4 @@
-"""Einfalt vaktaplanslíkan: hörð mönnun og hvíld, þrjú mjúk markmið.
+"""Einfalt vaktaplanslíkan: hörð mönnun og hvíld, fimm mjúk markmið.
 
 Fallið byggir líkanið; main.py leysir það. Reglurnar hér staðfesta ekki
 heildarfylgni við vinnulöggjöf. Vaktatímar og mánaðarmörk þurfa yfirferð.
@@ -16,6 +16,13 @@ STILLINGAR = {
     "w_vinnuskylda": 10,
     "w_umframmonnun": 1,
     "w_aukahelgi": 50,
+    # Fjölbreytni: hver vaktategund nálægt jöfnum hlut af vöktum viðkomandi.
+    "vikmork_vaktategund": 2,
+    "w_vaktajafnvaegi": 5,
+    # Vaktstjórar fá hvíld frá hlutverkinu: mest helmingur vakta sem V.
+    "vaktstjorahlutverk": "V",
+    "hamark_vaktstjora": 0.5,
+    "w_vaktstjori": 3,
 }
 # Staðfest vaktatímaskrá vantar; þetta eru skýrar reglur um vaktapör.
 BONNUD_POR = (("NV", "MV"), ("NV", "KV"), ("KV", "MV"))
@@ -117,10 +124,36 @@ def byggja_model(gogn, w_aukahelgi=50):
                                 <= vinnur_dag(i, lau) + vinnur_dag(i, sun),
                                 name=f"frihelgi_fos_{i}_{fos}")
 
+    # 6. Fjölbreytni vakta: hjá þeim sem taka fleiri en eina vaktategund á hver
+    #    tegund að vera nálægt jöfnum hlut af þeirra eigin vöktum (±vikmörk).
+    #    Frávik umfram vikmörk kostar, svo fólk lendi ekki alltaf á sömu vöktum.
+    vaktalyklar = [(i, s) for i in starfsmenn if len(gogn["leyfdar"][i]) >= 2
+                   for s in gogn["leyfdar"][i]]
+    ojafn = model.addVars(vaktalyklar, lb=0, name="ojafnvaegi_vakta")
+    for i, s in vaktalyklar:
+        jafnt = x.sum(i, "*", "*", "*") * (1 / len(gogn["leyfdar"][i]))
+        fjoldi = x.sum(i, "*", s, "*")
+        vm = STILLINGAR["vikmork_vaktategund"]
+        model.addConstr(fjoldi <= jafnt + vm + ojafn[i, s], name=f"vaktir_upp_{i}_{s}")
+        model.addConstr(fjoldi >= jafnt - vm - ojafn[i, s], name=f"vaktir_nidur_{i}_{s}")
+
+    # 7. Vaktstjórar ekki alltaf vaktstjórar: mest hamark_vaktstjora af vöktum
+    #    viðkomandi í V-hlutverki. Á aðeins við þá sem hafa líka önnur hlutverk.
+    V = STILLINGAR["vaktstjorahlutverk"]
+    v_hopur = [i for i in starfsmenn if V in gogn["haefni"][i] and len(gogn["haefni"][i]) >= 2]
+    ofmikid_v = model.addVars(v_hopur, lb=0, name="ofmikid_vaktstjori")
+    for i in v_hopur:
+        model.addConstr(x.sum(i, "*", "*", V)
+                        <= STILLINGAR["hamark_vaktstjora"] * x.sum(i, "*", "*", "*") + ofmikid_v[i],
+                        name=f"vaktstjori_{i}")
+
     model.setObjective(STILLINGAR["w_vinnuskylda"] * (undir.sum() + yfir.sum())
                        + STILLINGAR["w_umframmonnun"] * umfram.sum()
-                       + st["w_aukahelgi"] * auka.sum(), GRB.MINIMIZE)
+                       + st["w_aukahelgi"] * auka.sum()
+                       + STILLINGAR["w_vaktajafnvaegi"] * ojafn.sum()
+                       + STILLINGAR["w_vaktstjori"] * ofmikid_v.sum(), GRB.MINIMIZE)
     model._aux = {"undir_vinnuskyldu": undir, "yfir_vinnuskyldu": yfir,
                   "umframmonnun": umfram, "aukahelgi": auka,
+                  "ojafnvaegi_vakta": ojafn, "ofmikid_vaktstjori": ofmikid_v,
                   "helgarhopur": z, "stillingar": st}
     return model, x
