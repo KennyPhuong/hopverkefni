@@ -23,8 +23,8 @@ from check_solution import sannreyna_lausn
 from greining import fingrafar_gagna, vista_gaedamat, teikna_keyrslu
 
 MAPPA = Path(__file__).resolve().parent
-TIMAMORK = 60
-GAP = .05
+TIMAMORK = 600
+GAP = 0
 
 
 def skrifa_csv(slod, haus, radir):
