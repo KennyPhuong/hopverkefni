@@ -9,7 +9,9 @@ from datetime import datetime
 import json
 import math
 from pathlib import Path
+import shutil
 import sys
+import tempfile
 from uuid import uuid4
 
 import gurobipy as gp
@@ -111,9 +113,19 @@ def keyra_likan(gogn, mappa, w_aukahelgi=50):
         model.Params.MIPGap = GAP
         model.Params.Seed = 0
         model.Params.Threads = 2
-        model.Params.LogFile = str(mappa / "solver.log")
+        # Gurobi á Windows ræður ekki við stafi eins og ó/ð í slóð.
+        # Þá er loggurinn skrifaður í Temp og færður í niðurstöðumöppuna á eftir.
+        loka_log = mappa / "solver.log"
+        if str(loka_log).isascii():
+            gurobi_log = loka_log
+        else:
+            gurobi_log = Path(tempfile.gettempdir()) / f"gurobi_{uuid4().hex}.log"
+        model.Params.LogFile = str(gurobi_log)
         model._progress = []
         model.optimize(framvinda)
+        if gurobi_log != loka_log:
+            model.Params.LogFile = ""          # loka loggskránni áður en hún er færð
+            shutil.move(str(gurobi_log), str(loka_log))
         yfirlit = vista_nidurstodu(model, x, gogn, mappa)
         yfirlit["gurobi_version"] = list(gp.gurobi.version())
         yfirlit["data_fingerprint"] = fingrafar_gagna(gogn)
