@@ -20,7 +20,7 @@ VAKTIR = ("MV", "KV", "NV")
 MANADARHEITI = ("Janúar", "Febrúar", "Mars", "Apríl", "Maí", "Júní",
                "Júlí", "Ágúst", "September", "Október", "Nóvember", "Desember")
 HAEFNIDALKAR = {"v": "V", "t": "T", "h": "H", "a1": "A1", "a": "A",
-               "b1": "B1", "b": "B", "c": "C", "d1": "D1", "dg": "Dg", "d": "D"}
+               "b1": "B1", "b": "B", "c": "C", "d1": "D1", "dg": "DB", "d": "D"}
 MANADARMERKINGAR = ("hlutfall", "verkefni", "bor", "nm", "namsleyfi",
                     "stjornun", "faeding", "leyfi", "veikindi")
 MANADARFYRIRSAGNIR = ("Verkefni", "BÖR", "NM", "Námsleyfi", "Stjórnun",
@@ -422,6 +422,8 @@ def lesa_og_hreinsa_monnun(gagnamappa):
         raise ValueError("Sheet2: vantar ótvíræða MV/KV/NV-fyrirsögn.")
     j, dalkar = headers[0]
     roles = {r.upper(): r for r in HAEFNIDALKAR.values()}
+    # Kennari leiðrétti heitið Dg í DB; varðveita sömu hæfnifána.
+    roles["DG"] = "DB"
     thorf = Counter()
     for s, c in dalkar.items():
         for idx, x in tafla.loc[j + 1:, c].items():
@@ -474,7 +476,7 @@ def undirbua_gogn(ar, manudur, gagnamappa=None, *, fra_drattur=None,
 
 
 def lesa_novembergogn(gagnamappa):
-    """Eitt verkefni: nóvember 2026, með svörum kennara frá 7.–8. október.
+    """Eitt verkefni: nóvember 2026, með skráðum svörum kennara/BMT.
 
     BÖR/NM eru hunsuð. Aðrir frádráttarflokkar eru áfram skráð
     bráðabirgðaforsenda; staðfesta þarf hvort mánaðarhlutfall sé þegar nettó.
@@ -498,7 +500,11 @@ def lesa_novembergogn(gagnamappa):
         sleppa_starfsmonnum={"h100": heimild + ": í orlofi til 30.11; ekki tiltæk í nóvember."})
     gogn["forsendur"].update(hunsadir_flokkar=["BÖR", "NM"],
         vinnuhlutfall_stadfest=False, vaktamark_stadfest=False,
-        vaktamark_regla="30/7*5", gagnaar_stadfest=False)
+        vaktamark_regla="30/7*5", gagnaar_stadfest=False,
+        hlutverkavorpun={"dg": "DB"},
+        monnunarheimild="Skýringar BMT sem kennari miðlaði; uppfært 12.10.2026",
+        monnun_bradabirgda={"T": [2, 2, 1], "C": [2, 2, 2]},
+        monnun_bradabirgda_astaeda="T/C fjöldi ekki fulltilgreindur í nýja svarinu; eldri tölur haldast.")
     return gogn
 
 

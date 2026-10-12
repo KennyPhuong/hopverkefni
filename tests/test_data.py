@@ -75,6 +75,27 @@ class DataTests(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
+    def test_db_skill_uses_original_dg_flag(self):
+        t = self.t.copy()
+        for c in data.HAEFNIDALKAR:
+            t[c] = "0"
+        t["b"] = "1"
+        t["d"] = "1"
+        skills = data.hreinsa_haefni(t)
+        self.assertNotIn("DB", skills["h1"])
+        t["dg"] = "1"
+        skills = data.hreinsa_haefni(t)
+        self.assertIn("DB", skills["h1"])
+        self.assertNotIn("Dg", skills["h1"])
+
+    def test_db_and_legacy_dg_demand_alias(self):
+        p = self.folder / data.MONNUNARSKRA
+        for role in ("DB", "Dg", " dg "):
+            _skrifa_raðir(p, [["MV", "KV", "NV"], ["A", "A", role]])
+            q = data.lesa_og_hreinsa_monnun(self.folder)
+            self.assertEqual(q[("NV", "DB")], 1)
+            self.assertFalse(any(r == "Dg" for s, r in q))
+
     def test_dates(self):
         for y, m, n in ((2026, 11, 30), (2026, 10, 31), (2028, 2, 29), (2026, 2, 28)):
             self.assertEqual(len(data.bua_til_dagsetningar(y, m)), n)
@@ -342,7 +363,7 @@ class RealDataTests(unittest.TestCase):
         self.assertNotIn("h100", g["starfsmenn"])
         self.assertFalse({"bor", "nm"}.intersection(g["forsendur"]["fra_drattur"]))
         self.assertEqual(len(g["leidrettingar"]), 3)
-        self.assertEqual(sum(g["monnunar_thorf"].values()), 1500)
+        self.assertEqual(sum(g["monnunar_thorf"].values()), 1470)
         t = data.lesa_starfsfolk(folder)
         self.assertEqual(t.loc[t["Nafn"] == "h147", "a"].iloc[0], "11")
 
@@ -356,7 +377,7 @@ class RealDataTests(unittest.TestCase):
             sleppa_starfsmonnum=exclusions)
         self.assertEqual(len(g["starfsmenn"]), 134)
         self.assertEqual(len(g["utskildir"]), 4)
-        self.assertEqual(sum(g["monnunar_thorf"].values()), 1500)
+        self.assertEqual(sum(g["monnunar_thorf"].values()), 1470)
         for key in ("starfsmenn", "leyfdar", "haefni", "mark", "virkt", "texti"):
             self.assertFalse(set(exclusions).intersection(g[key]))
         data.sannreyna_gogn(g)
@@ -366,7 +387,15 @@ class RealDataTests(unittest.TestCase):
         self.assertEqual(len(data.lesa_starfsfolk(folder)), 170)
         q = data.lesa_og_hreinsa_monnun(folder)
         self.assertEqual([sum(v for (ss, r), v in q.items() if ss == s)
-                          for s in data.VAKTIR], [19, 19, 12])
+                          for s in data.VAKTIR], [18, 19, 12])
+
+    def test_updated_role_counts(self):
+        q = data.lesa_og_hreinsa_monnun(os.environ["HR_GAGNAMAPPA"])
+        expected = {"B": [3, 3, 3], "D": [2, 3, 0], "DB": [0, 0, 1],
+                    "T": [2, 2, 1], "C": [2, 2, 2]}
+        for role, counts in expected.items():
+            self.assertEqual([q.get((s, role), 0) for s in data.VAKTIR], counts)
+        self.assertFalse(any(r == "Dg" for s, r in q))
 
     def test_real_november_rejects_negative(self):
         with self.assertRaisesRegex(ValueError, "h100"):
