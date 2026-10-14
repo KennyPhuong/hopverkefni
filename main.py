@@ -20,7 +20,7 @@ from gurobipy import GRB
 from data import lesa_novembergogn
 from model import byggja_model
 from check_solution import sannreyna_lausn
-from greining import fingrafar_gagna, vista_gaedamat, teikna_keyrslu
+from greining import fingrafar_gagna, vista_gaedamat, teikna_keyrslu, vista_vaktaplan
 
 MAPPA = Path(__file__).resolve().parent
 TIMAMORK = 600
@@ -160,6 +160,7 @@ def keyra_likan(gogn, mappa, w_aukahelgi=50):
         skrifa_csv(mappa / "progress.csv", ["elapsed_seconds", "incumbent", "best_bound", "gap"], model._progress)
         if yfirlit.get("checker_pass"):
             teikna_keyrslu(mappa)
+            vista_vaktaplan(gogn, mappa)
         print("\nStaða:", yfirlit["status"], "| Niðurstöður:", mappa)
         if model.SolCount == 0:
             print("Engin lausn fannst; ekkert vaktaplan var vistað.")

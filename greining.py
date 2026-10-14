@@ -8,10 +8,185 @@ import csv
 from datetime import date, timedelta
 import hashlib
 import json
+import re
 from pathlib import Path
 from statistics import mean, pstdev
 
 DAGUR = timedelta(days=1)
+VAKTALITIR = {"MV": "B8D8F0", "KV": "F9D19A", "NV": "D3B9E8"}
+
+
+def _audkennisrod(nafn):
+    """Náttúruleg röð auðkenna: h2 á undan h10."""
+    m = re.fullmatch(r"h(\d+)", nafn)
+    return (0, int(m.group(1))) if m else (1, nafn)
+
+
+def bua_til_vaktatoflu(gogn, assignments):
+    """Lesa eina úthlutun á dag; varðveita líka starfsfólk án vakta."""
+    folk = sorted(gogn["starfsmenn"], key=_audkennisrod)
+    dagar = list(gogn["dagar"])
+    reitir = {}
+    with Path(assignments).open(encoding="utf-8", newline="") as f:
+        reader = csv.DictReader(f)
+        if reader.fieldnames != ["nurse_id", "date", "shift", "role"]:
+            raise ValueError("Ógilt dálkasnið í assignments.csv.")
+        for row in reader:
+            i, d = row["nurse_id"], date.fromisoformat(row["date"])
+            s, r = row["shift"], row["role"]
+            if (i not in folk or d not in dagar or s not in gogn["leyfdar"][i]
+                    or r not in gogn["haefni"][i]
+                    or gogn["monnunar_thorf"].get((d, s, r), 0) <= 0):
+                raise ValueError(f"Ógild úthlutun í vaktamynd: {row}.")
+            if (i, d) in reitir:
+                raise ValueError(f"Tvær úthlutanir hjá {i} á {d}; ekki fela tvítekningu.")
+            reitir[i, d] = (s, r)
+    return folk, dagar, reitir
+
+
+def velja_synishorn(gogn, hamark=15):
+    """Fyrstu fimm úr þremur vaktamynstrum; fylla laus sæti eftir auðkenni.
+
+    Val byggist á leyfðum vöktum, aldrei gæðum úthlutunarinnar.
+    """
+    if isinstance(hamark, bool) or not isinstance(hamark, int) or hamark < 1:
+        raise ValueError("Hámark sýnishorns þarf að vera jákvæð heiltala.")
+    folk = sorted(gogn["starfsmenn"], key=_audkennisrod)
+    val = []
+    for pattern in ({"MV", "KV", "NV"}, {"MV", "KV"}, {"MV"}):
+        hopur = [i for i in folk if set(gogn["leyfdar"][i]) == pattern]
+        val.extend(hopur[:5])
+    val = val[:hamark]
+    val.extend(i for i in folk if i not in val)
+    mynstur = [("MV", "KV", "NV"), ("MV", "KV"), ("MV",)]
+    def birtingarrod(i):
+        pattern = tuple(s for s in ("MV", "KV", "NV") if s in gogn["leyfdar"][i])
+        return (mynstur.index(pattern) if pattern in mynstur else 3, _audkennisrod(i))
+    return sorted(val[:hamark], key=birtingarrod)
+
+
+def _vista_excel_vaktaplan(folk, dagar, reitir, slod, heimild):
+    """Heildarplan með hlutverkum; opnast án Gurobi eða annarra kerfa."""
+    from openpyxl import Workbook
+    from openpyxl.styles import Alignment, Font, PatternFill, Border, Side
+    from openpyxl.utils import get_column_letter
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Vaktaplan"
+    ws.sheet_view.showGridLines = False
+    ws.cell(2, 1, f"Vaktaplan {dagar[0]:%Y-%m}").font = Font(name="Arial", size=14, bold=True)
+    ws.cell(3, 1, f"Heimild: {heimild}; NV tilheyrir upphafsdegi.")
+    ws.cell(4, 1, "Litaskýring")
+    for col, (s, color) in zip((2, 4, 6), VAKTALITIR.items()):
+        cell = ws.cell(4, col, s)
+        cell.fill = PatternFill("solid", fgColor=color)
+    ws.cell(4, 8, "Hvítt = frí")
+    ws.cell(6, 1, "Starfsmaður")
+    ws.column_dimensions["A"].width = 16
+    ws.row_dimensions[6].height = 32
+    vardagur = ("mán", "þri", "mið", "fim", "fös", "lau", "sun")
+    for col, d in enumerate(dagar, 2):
+        c = ws.cell(6, col, d)
+        c.number_format = 'd" ' + vardagur[d.weekday()] + '"'
+        c.fill = PatternFill("solid", fgColor="596579" if d.weekday() >= 5 else "26384D")
+        c.font = Font(name="Arial", size=10, bold=True, color="FFFFFF")
+        c.alignment = Alignment(horizontal="center", vertical="center")
+        ws.column_dimensions[get_column_letter(col)].width = 10.5
+    ws.cell(6, 1).fill = PatternFill("solid", fgColor="26384D")
+    ws.cell(6, 1).font = Font(name="Arial", size=10, bold=True, color="FFFFFF")
+    for row, i in enumerate(folk, 7):
+        ws.cell(row, 1, i).font = Font(name="Arial", size=10)
+        ws.row_dimensions[row].height = 24
+        for col, d in enumerate(dagar, 2):
+            entry = reitir.get((i, d))
+            cell = ws.cell(row, col, f"{entry[0]} · {entry[1]}" if entry else "")
+            cell.font = Font(name="Arial", size=10)
+            cell.alignment = Alignment(horizontal="center", vertical="center")
+            cell.fill = PatternFill("solid", fgColor=VAKTALITIR[entry[0]] if entry else "FFFFFF")
+            if d.weekday() == 0:
+                cell.border = Border(left=Side(style="thin", color="C3CBD5"))
+    ws.freeze_panes = "B7"
+    ws.auto_filter.ref = f"A6:{get_column_letter(len(dagar)+1)}{len(folk)+6}"
+    ws.print_title_rows = "1:6"
+    ws.page_setup.orientation = "landscape"
+    ws.page_setup.paperSize = ws.PAPERSIZE_A3
+    ws.page_setup.fitToWidth = 1
+    ws.page_setup.fitToHeight = 0
+    ws.sheet_properties.pageSetUpPr.fitToPage = True
+    wb.save(slod)
+
+
+def _teikna_vaktaplan(gogn, dagar, reitir, val, slod):
+    """Læsilegt útsnið fyrir skýrslu; aðeins vaktategund í litareitum."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from matplotlib.patches import Rectangle, Patch
+
+    fig, ax = plt.subplots(figsize=(12.8, max(4, len(val)*0.31 + 1.8)))
+    for row, i in enumerate(val):
+        for col, d in enumerate(dagar):
+            entry = reitir.get((i, d))
+            color = "#" + VAKTALITIR[entry[0]] if entry else "white"
+            ax.add_patch(Rectangle((col, row), 1, 1, facecolor=color,
+                                   edgecolor="#E0E4EA", linewidth=.5))
+            if entry:
+                ax.text(col+.5, row+.5, entry[0], ha="center", va="center", fontsize=12)
+    ax.set(xlim=(0, len(dagar)), ylim=(len(val), 0))
+    ax.set_xticks([k+.5 for k in range(len(dagar))], [str(d.day) for d in dagar])
+    labels = [i + "  " + "/".join(s for s in ("MV", "KV", "NV") if s in gogn["leyfdar"][i]) for i in val]
+    ax.set_yticks([k+.5 for k in range(len(val))], labels)
+    ax.xaxis.tick_top()
+    ax.tick_params(length=0, labelsize=11, pad=5)
+    for tick, d in zip(ax.get_xticklabels(), dagar):
+        if d.weekday() >= 5:
+            tick.set_bbox(dict(facecolor="#E2E7ED", edgecolor="none", pad=3))
+    for spine in ax.spines.values():
+        spine.set_visible(False)
+    ax.set_title(f"Vaktaplan {dagar[0]:%Y-%m} — {len(val)} af {len(gogn['starfsmenn'])} starfsmönnum",
+                 fontsize=15, loc="left", pad=24)
+    legend = [Patch(facecolor="#"+c, label=s) for s,c in VAKTALITIR.items()]
+    legend.append(Patch(facecolor="white", edgecolor="#CBD2DA", label="Frí"))
+    ax.legend(handles=legend, loc="upper left", bbox_to_anchor=(0, -.065),
+              ncol=4, frameon=False, fontsize=12)
+    fig.text(.02, .02, "Grár dagahaus = laugardagur/sunnudagur. Hlutverk eru í Excel-heildarplaninu.", fontsize=10)
+    fig.subplots_adjust(left=.15, right=.99, top=.85, bottom=.16)
+    fig.savefig(slod, dpi=300, bbox_inches="tight", facecolor="white")
+    plt.close(fig)
+
+
+def vista_vaktaplan(gogn, mappa, nidurstodumappa=None):
+    """Búa til Excel og skýrslumynd úr yfirfarinni lausn, án nýrrar bestunar."""
+    from check_solution import sannreyna_lausn
+    mappa = Path(mappa)
+    run = json.loads((mappa / "run.json").read_text(encoding="utf-8"))
+    if not run.get("solution_count"):
+        raise ValueError("Engin fundin lausn til að teikna.")
+    if run.get("data_fingerprint") != fingrafar_gagna(gogn):
+        raise ValueError("Gögnin passa ekki við valda keyrslu; ekki blanda lausnum og gögnum.")
+    check = sannreyna_lausn(gogn, mappa / "assignments.csv")
+    if not check["pass"]:
+        raise ValueError("Lausn féll í óháðri yfirferð; ekki birta hana sem gilt vaktaplan.")
+    out = Path(nidurstodumappa) if nidurstodumappa else mappa
+    folk, dagar, reitir = bua_til_vaktatoflu(gogn, mappa / "assignments.csv")
+    val = velja_synishorn(gogn)
+    out.mkdir(parents=True, exist_ok=True)
+    _vista_excel_vaktaplan(folk, dagar, reitir, out / "vaktaplan.xlsx", mappa.name)
+    _teikna_vaktaplan(gogn, dagar, reitir, val, out / "vaktaplan_synishorn.png")
+    metadata = {"source_run": mappa.name, "source_assignments_sha256": hashlib.sha256(
+        (mappa / "assignments.csv").read_bytes()).hexdigest(),
+        "staff_count": len(folk), "day_count": len(dagar), "assignment_count": len(reitir),
+        "selected_nurses": val,
+        "selection_rule": "Fyrstu fimm eftir tölulegu auðkenni úr MV/KV/NV, MV/KV og MV; laus sæti fyllt eftir auðkenni.",
+        "objective": run["objective"], "gap": run["gap"]}
+    (out / "vaktaplan_mynd.json").write_text(json.dumps(metadata, ensure_ascii=False, indent=2), encoding="utf-8")
+    caption = (f"Útsnið úr bestu fundnu lausn valinnar keyrslu fyrir {dagar[0]:%Y-%m}. "
+               f"Sýndir eru {len(val)} af {len(folk)} starfsmönnum. "
+               + metadata["selection_rule"] + " Litir tákna MV, KV og NV; hvítir reitir frí. "
+               "NV tilheyrir upphafsdegi. Heildarplan með hlutverkum fylgir í Excel.\n")
+    (out / "vaktaplan_myndatexti.txt").write_text(caption, encoding="utf-8")
+    return metadata
 
 
 def skrifa_toflu(slod, radir, haus):
@@ -188,3 +363,14 @@ def teikna_naemni(mappa, radir):
     fig.suptitle("Sami mánuður og sömu tímamörk; besta lausn hverrar keyrslu, ekki staðfest optimum")
     fig.savefig(mappa / "sensitivity.png", dpi=180)
     plt.close(fig)
+
+
+if __name__ == "__main__":
+    import argparse
+    from data import lesa_novembergogn
+    parser = argparse.ArgumentParser(description="Teikna varðveitta nóvemberlausn án nýrrar Gurobi-keyrslu.")
+    parser.add_argument("keyrsla", type=Path)
+    parser.add_argument("--ut", type=Path, default=None, help="Önnur úttaksmappa; sjálfgefið valin keyrslumappa.")
+    args = parser.parse_args()
+    vista_vaktaplan(lesa_novembergogn(Path(__file__).resolve().parent), args.keyrsla, args.ut)
+    print("Excel og skýrslumynd vistuð í", args.ut or args.keyrsla)
