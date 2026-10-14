@@ -1,0 +1,151 @@
+{
+  "schema_version": 1,
+  "ar": 2026,
+  "manudur": 11,
+  "status": "TIME_LIMIT",
+  "status_code": 9,
+  "solution_count": 10,
+  "runtime_seconds": 600.0947620868683,
+  "variables": 73440,
+  "constraints": 33049,
+  "objective": 2093.428538811907,
+  "bound": 2025.428571428616,
+  "gap": 0.03248258353346199,
+  "staff_count": 137,
+  "forsendur": {
+    "fra_drattur": [
+      "verkefni",
+      "namsleyfi",
+      "stjornun",
+      "faeding",
+      "leyfi",
+      "veikindi"
+    ],
+    "vaktir_100": 21.428571428571427,
+    "bn_sem_nm": false,
+    "textastefna": "manadarprosentur",
+    "jafnlangar_vaktir": true,
+    "sama_thorf_alla_daga": true,
+    "neikvaett_i_null": true,
+    "sleppa_starfsmonnum": {
+      "h100": "Svar kennara 7.–8. október 2026: í orlofi til 30.11; ekki tiltæk í nóvember."
+    },
+    "hunsadir_flokkar": [
+      "BÖR",
+      "NM"
+    ],
+    "vinnuhlutfall_stadfest": false,
+    "vaktamark_stadfest": false,
+    "vaktamark_regla": "30/7*5",
+    "gagnaar_stadfest": false,
+    "hlutverkavorpun": {
+      "dg": "DB"
+    },
+    "monnunarheimild": "Skýringar BMT sem kennari miðlaði; uppfært 12.10.2026",
+    "monnun_bradabirgda": {
+      "T": [
+        2,
+        2,
+        1
+      ],
+      "C": [
+        2,
+        2,
+        2
+      ]
+    },
+    "monnun_bradabirgda_astaeda": "T/C fjöldi ekki fulltilgreindur í nýja svarinu; eldri tölur haldast."
+  },
+  "utskildir": [
+    {
+      "starfsmadur": "h100",
+      "astaeda": "Svar kennara 7.–8. október 2026: í orlofi til 30.11; ekki tiltæk í nóvember.",
+      "ar": 2026,
+      "manudur": 11
+    }
+  ],
+  "leidrettingar": [
+    {
+      "starfsmadur": "h74",
+      "dalkur": "Vaktir",
+      "gamalt": "12-20-KV",
+      "nytt": "KV",
+      "astaeda": "Svar kennara 7.–8. október 2026: valið aðeins KV, eins og heimilt er.",
+      "heimildardalkur": "Vaktir"
+    },
+    {
+      "starfsmadur": "h124",
+      "dalkur": "Vaktir",
+      "gamalt": "MV-KV-4",
+      "nytt": "MV-KV",
+      "astaeda": "Svar kennara 7.–8. október 2026: talan 4 hunsuð; merking óskar óstaðfest.",
+      "heimildardalkur": "Vaktir"
+    },
+    {
+      "starfsmadur": "h147",
+      "dalkur": "a",
+      "gamalt": "11",
+      "nytt": 1,
+      "astaeda": "Svar kennara 7.–8. október 2026: staðfest innsláttarvilla.",
+      "heimildardalkur": "a"
+    }
+  ],
+  "stillingar": {
+    "max_nv_rod": 4,
+    "max_dagar_rod": 6,
+    "fjoldi_helgarhopa": 3,
+    "w_vinnuskylda": 10,
+    "w_umframmonnun": 1,
+    "w_aukahelgi": 50,
+    "vikmork_vaktategund": 2,
+    "w_vaktajafnvaegi": 5,
+    "vaktstjorahlutverk": "V",
+    "hamark_vaktstjora": 0.5,
+    "w_vaktstjori": 3
+  },
+  "fyrri_vaktir_gefnar": false,
+  "oskir_gefnar": false,
+  "independent_checker_run": true,
+  "coverage_met": true,
+  "unfilled_slots": 0,
+  "assignment_count": 2102,
+  "gurobi_version": [
+    13,
+    0,
+    3
+  ],
+  "data_fingerprint": "3676d7b877e872bdb374468704b9c9abe70f5531784fb0440382ff50a47664c2",
+  "solver_parameters": {
+    "TimeLimit": 600,
+    "MIPGap": 0,
+    "Seed": 0,
+    "Threads": 2
+  },
+  "checker_pass": true,
+  "boundaries_verified": false,
+  "objective_components": {
+    "vinnuskylda": 411.4285388119069,
+    "umframmonnun": 632.0,
+    "aukahelgi": 1050.0,
+    "vaktajafnvaegi": 0.0,
+    "vaktstjori": 0.0
+  },
+  "quality": {
+    "below_target": 33.28571428571419,
+    "above_target": 7.8571428571429,
+    "total_workload_deviation": 41.142857142857096,
+    "mean_deviation": -0.18561001042752767,
+    "std_deviation": 0.3074936588241879,
+    "std_relative_deviation": 0.028597754122820177,
+    "max_absolute_deviation": 1.428571428571427,
+    "worst_absolute_nurse": "h31",
+    "max_absolute_relative_deviation": 0.06666666666666671,
+    "worst_relative_nurse": "h10",
+    "extra_weekend_days": 21,
+    "max_extra_weekend_days": 1,
+    "overstaffing": 632,
+    "unfilled_slots": 0,
+    "assignment_count": 2102,
+    "night_count": 556
+  }
+}

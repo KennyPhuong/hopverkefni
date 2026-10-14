@@ -1,0 +1,18 @@
+{
+  "below_target": 33.28571428571419,
+  "above_target": 7.8571428571429,
+  "total_workload_deviation": 41.142857142857096,
+  "mean_deviation": -0.18561001042752767,
+  "std_deviation": 0.3074936588241879,
+  "std_relative_deviation": 0.028597754122820177,
+  "max_absolute_deviation": 1.428571428571427,
+  "worst_absolute_nurse": "h31",
+  "max_absolute_relative_deviation": 0.06666666666666671,
+  "worst_relative_nurse": "h10",
+  "extra_weekend_days": 21,
+  "max_extra_weekend_days": 1,
+  "overstaffing": 632,
+  "unfilled_slots": 0,
+  "assignment_count": 2102,
+  "night_count": 556
+}
